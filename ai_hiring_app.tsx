@@ -41,9 +41,9 @@ function Nav({ isLoggedIn, onLogin, onLogout, onHome }) {
     <nav className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
       <div className="flex items-center gap-2 cursor-pointer" onClick={onHome}>
         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow">
-          <span className="text-white font-bold text-sm">H</span>
+          <span className="text-white font-bold text-sm">S</span>
         </div>
-        <span className="font-extrabold text-gray-800 text-lg tracking-tight">HireAI</span>
+        <span className="font-extrabold text-gray-800 text-lg tracking-tight">SocketHR</span>
       </div>
       {isLoggedIn ? (
         <div className="flex items-center gap-3">
