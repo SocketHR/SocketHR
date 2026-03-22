@@ -4,3 +4,6 @@ dist/
 data/
 .env.production
 server/.env
+
+# Local cloudflared config if copied into repo by mistake (real file lives in ~/.cloudflared/)
+deploy/cloudflared/config.yml

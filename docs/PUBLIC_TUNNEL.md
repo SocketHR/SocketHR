@@ -29,7 +29,17 @@ Best if **sockethr.com DNS is on Cloudflare**.
 1. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) on the Mac.
 2. Authenticate: `cloudflared tunnel login`
 3. Create a tunnel: `cloudflared tunnel create sockethr-api`
-4. In Cloudflare dashboard: **Zero Trust → Networks → Tunnels** → assign a **Public hostname**, e.g. `api.sockethr.com` → **HTTP** → `http://127.0.0.1:3000`
+4. In the Cloudflare dashboard, add a **Public hostname** (same tunnel, either UI works):
+   - **Zero Trust** → **Networks** → **Tunnels** → your tunnel → **Public hostname**, **or**
+   - **Account home** (no zone selected) → sidebar **Networking** → **Tunnels**, **or** open **`https://dash.cloudflare.com/<your_account_id>/tunnels`** (same page; easier than **Insights → Tunnels** if clicks get stuck).
+   - Set **hostname** to `api.sockethr.com` (or your chosen subdomain), **type** HTTP, **URL** `http://127.0.0.1:3000`.
+
+   **If Zero Trust shows “Reporting only” or “We could not find that page” on Tunnels:** your role cannot manage connectors. Fix it by logging in as the **Zero Trust team owner** or having them grant **Super Administrator** (or equivalent). You can still try the **account-level Networking → Tunnels** path above, or do everything via CLI (`cloudflared tunnel route dns …` after login).
+
+   **DNS on Vercel (not Cloudflare):** after the tunnel exists, Cloudflare shows a **CNAME target** (often `*.cfargotunnel.com`). In **Vercel → Project → Settings → Domains** (or your DNS host), add **CNAME** `api` → that target. Do **not** point `api` at Vercel’s `cname.vercel-dns.com` if you want the tunnel to serve the API.
+
+   **If dashboard “Add route” → “Published application” has a grayed-out “Select domain”:** your apex domain (e.g. `sockethr.com`) is **not** added as a zone in this Cloudflare account, so the UI cannot auto-manage DNS. Fix: **add the domain to Cloudflare** (see [CLOUDFLARE_ZONE_AND_VERCEL.md](./CLOUDFLARE_ZONE_AND_VERCEL.md) — **partial/CNAME setup needs Business+**), **or** define the hostname in a **`cloudflared` config file** (`ingress` rules) and add the **CNAME** for `api` manually at Vercel (tunnel overview / docs show the `*.cfargotunnel.com` target once the route exists).
+
 5. Run the tunnel (or use the generated config):
 
    ```bash
@@ -37,6 +47,18 @@ Best if **sockethr.com DNS is on Cloudflare**.
    ```
 
 See also [deploy/cloudflared/config.example.yml](../deploy/cloudflared/config.example.yml) for a config-file shape (replace tunnel UUID and credentials path).
+
+#### Option 1b — Vercel DNS only (`config.yml` + CNAME, no Cloudflare zone)
+
+If **`sockethr.com` is not** on Cloudflare, skip the dashboard public hostname and use a **local config** plus a **Vercel CNAME**:
+
+1. **`cloudflared tunnel create sockethr-api`** (if you have not already).
+2. Copy **[`deploy/cloudflared/config.example.yml`](../deploy/cloudflared/config.example.yml)** to **`~/.cloudflared/config.yml`**, set **`tunnel:`** to the tunnel **UUID** and **`credentials-file`** to the matching **`~/.cloudflared/<UUID>.json`**.
+3. **Ingress** must include **`api.sockethr.com` → `http://127.0.0.1:3000`** and a final **`http_status:404`** rule (see example).
+4. At **Vercel** DNS for `sockethr.com`, add **CNAME** **`api`** → **`<TUNNEL_UUID>.cfargotunnel.com`** (same UUID as in the config).
+5. Run: **`cloudflared tunnel --config ~/.cloudflared/config.yml run`** (with **`npm run server`** up).
+
+Step-by-step: **[`deploy/cloudflared/README.md`](../deploy/cloudflared/README.md)** and **[`docs/PATH_A_SETUP.md`](./PATH_A_SETUP.md)** (checklist + `setup-path-a.sh`).
 
 ### Option 2: ngrok (quick test)
 

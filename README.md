@@ -10,6 +10,9 @@ See **[docs/STARTUP.md](docs/STARTUP.md)** for the exact commands to start LM St
 
 - [docs/LOCAL_BACKEND.md](docs/LOCAL_BACKEND.md) — Node server + LM Studio
 - [docs/PUBLIC_TUNNEL.md](docs/PUBLIC_TUNNEL.md) — HTTPS tunnel + Vercel
+- [deploy/cloudflared/README.md](deploy/cloudflared/README.md) — Tunnel + **Vercel DNS only** (`config.yml` + CNAME)
+- [docs/CLOUDFLARE_ZONE_AND_VERCEL.md](docs/CLOUDFLARE_ZONE_AND_VERCEL.md) — Add `sockethr.com` to Cloudflare vs **partial/CNAME setup** (Business+)
+- [docs/PATH_A_SETUP.md](docs/PATH_A_SETUP.md) — **Path A:** Vercel DNS + tunnel (`setup-path-a.sh`, verify script)
 - [docs/TROUBLESHOOTING_MOBILE.md](docs/TROUBLESHOOTING_MOBILE.md) — phone / LTE issues
 
 ## Scripts

@@ -38,19 +38,29 @@ cloudflared tunnel login
 cloudflared tunnel create sockethr-api
 ```
 
-In **Cloudflare Zero Trust** → **Networks** → **Tunnels** → your tunnel → **Public hostname**:
+**Pick one:**
+
+**A — Dashboard public hostname** (domain is a **Cloudflare zone**): **Cloudflare** → **Zero Trust → Networks → Tunnels** *or* **Networking → Tunnels** → your tunnel → **Public hostname** / **Add route** → **Published application**:
 
 - **Subdomain:** `api`
 - **Domain:** `sockethr.com`
 - **Service:** `http://127.0.0.1:3000`
 
+**B — Vercel DNS only** (domain **not** on Cloudflare): use **`~/.cloudflared/config.yml`** from **[`deploy/cloudflared/config.example.yml`](../deploy/cloudflared/config.example.yml)**, CNAME **`api`** → **`<tunnel-uuid>.cfargotunnel.com`** at Vercel. Full steps: **[`deploy/cloudflared/README.md`](../deploy/cloudflared/README.md)**.
+
+If you hit **Reporting only** or a grayed-out **Select domain**, use **B** or see [PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md).
+
 **Every session** (after Terminals 1–2 are up):
 
 ```bash
+# If you use a config file (Vercel DNS path):
+cloudflared tunnel --config ~/.cloudflared/config.yml run
+
+# If the tunnel is only configured in the Cloudflare dashboard:
 cloudflared tunnel run sockethr-api
 ```
 
-(Use the **same tunnel name** you created. If you named it differently, substitute that name.)
+(Use the **same tunnel name** you created when using the second form. If you named it differently, substitute that name.)
 
 ### Optional — local UI only (not required for sockethr.com)
 
