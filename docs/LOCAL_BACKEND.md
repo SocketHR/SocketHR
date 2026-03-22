@@ -92,3 +92,7 @@ Each analyze run creates `data/jobs/<uuid>/` with:
 - **launchd:** add a plist that runs `node` with `--env-file=.env` and `WorkingDirectory` set to `server/`.
 
 LM Studio must also be running (or use LM Studio CLI/headless if you automate loading the model).
+
+## Public site (sockethr.com) + phone on LTE
+
+See **[PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md)** — HTTPS tunnel to your Mac, `VITE_SOCKETHR_API_BASE`, and optional GitHub Pages workflow.

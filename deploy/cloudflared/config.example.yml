@@ -1,0 +1,14 @@
+# Copy to ~/.cloudflared/config.yml (or use path from `cloudflared tunnel run --config`)
+# Replace TUNNEL_UUID with output of `cloudflared tunnel create sockethr-api`
+# Point credentials-file at the JSON file cloudflared created for that tunnel.
+#
+# In Cloudflare Zero Trust UI you can instead configure the hostname → localhost:3000
+# without hand-editing this file.
+
+tunnel: TUNNEL_UUID
+credentials-file: /Users/YOUR_USER/.cloudflared/TUNNEL_UUID.json
+
+ingress:
+  - hostname: api.sockethr.com
+    service: http://127.0.0.1:3000
+  - service: http_status:404
