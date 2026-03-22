@@ -1,21 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ChangeEvent, type DragEvent } from "react";
 
-const MODEL = "claude-sonnet-4-20250514";
+const API_BASE =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SOCKETHR_API_BASE) ||
+  "http://127.0.0.1:3000";
 
-async function callClaude(messages, system = "", maxTokens = 2000) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+async function postJson(path, body) {
+  const res = await fetch(`${API_BASE.replace(/\/$/, "")}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
+    body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.content?.map(b => b.text || "").join("\n").trim() || "";
-}
-
-function safeParseJSON(raw) {
-  const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
-  return JSON.parse(clean);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${path} failed (${res.status})`);
+  return data;
 }
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
@@ -65,7 +62,7 @@ export default function App() {
   const [pendingNav, setPendingNav] = useState(null);
   const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
   const [resumeFiles, setResumeFiles] = useState([]); // [{name, base64, text}]
-  const fileInputRef = useRef();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [candidates, setCandidates] = useState([]);
   const [analysisStatus, setAnalysisStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -93,10 +90,13 @@ export default function App() {
   }
 
   // ── File handling ─────────────────────────────────────────────────────────
-  async function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
+  async function handleFileSelect(
+    e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
+  ) {
+    const raw = e.target.files;
+    const files = Array.isArray(raw) ? raw : Array.from(raw ?? []);
     if (!files.length) return;
-    const newFiles = [];
+    const newFiles: { name: string; base64: string; type: string }[] = [];
     for (const file of files) {
       const base64 = await readFileAsBase64(file);
       newFiles.push({ name: file.name, base64, type: file.type });
@@ -108,10 +108,13 @@ export default function App() {
     e.target.value = "";
   }
 
-  function readFileAsBase64(file) {
-    return new Promise((res, rej) => {
+  function readFileAsBase64(file: File) {
+    return new Promise<string>((res, rej) => {
       const r = new FileReader();
-      r.onload = () => res(r.result.split(",")[1]);
+      r.onload = () => {
+        const url = r.result as string;
+        res(url.split(",")[1]);
+      };
       r.onerror = () => rej(new Error("Read failed"));
       r.readAsDataURL(file);
     });
@@ -128,50 +131,11 @@ export default function App() {
     setCandidates([]);
 
     try {
-      // Process resumes individually then batch-score
-      setAnalysisStatus(`Extracting info from ${resumeFiles.length} resume(s)…`);
-      const extracted = [];
-
-      for (let i = 0; i < resumeFiles.length; i++) {
-        const f = resumeFiles[i];
-        setAnalysisStatus(`Reading resume ${i + 1} of ${resumeFiles.length}: ${f.name}…`);
-        const isPdf = f.type === "application/pdf";
-        const content = isPdf
-          ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.base64 } },
-             { type: "text", text: `Extract the following fields from this resume as a single JSON object. Respond ONLY with raw JSON, no markdown.\n\nFields:\n- name (string, "Unknown Candidate ${i+1}" if missing)\n- email (string, "" if missing)\n- phone (string, "" if missing)\n- years_experience (number, estimate)\n- skills (array of strings, top 8)\n- education (string, highest degree + institution)\n- recent_role (string, most recent title + company)\n- raw_summary (2-3 sentence background narrative)` }]
-          : [{ type: "text", text: `Extract the following fields from this resume text as a single JSON object. Respond ONLY with raw JSON, no markdown.\n\nResume text:\n${atob(f.base64)}\n\nFields:\n- name (string, "Unknown Candidate ${i+1}" if missing)\n- email (string, "" if missing)\n- phone (string, "" if missing)\n- years_experience (number, estimate)\n- skills (array of strings, top 8)\n- education (string, highest degree + institution)\n- recent_role (string, most recent title + company)\n- raw_summary (2-3 sentence background narrative)` }];
-
-        const raw = await callClaude([{ role: "user", content }], "", 1000);
-        extracted.push(safeParseJSON(raw));
-      }
-
-      // Step 2: score all candidates against the job
-      setAnalysisStatus("Scoring all candidates against job requirements…");
-      const scoringPrompt = `You are an expert recruiter. Score each candidate for the following job. Return ONLY a raw JSON array, no markdown.
-
-JOB TITLE: ${job.title}
-JOB DESCRIPTION: ${job.description}
-REQUIREMENTS: ${job.requirements}
-CULTURE & FIT: ${job.culture}
-
-CANDIDATES:
-${extracted.map((c, i) => `Candidate ${i} (index ${i}): ${JSON.stringify(c)}`).join("\n")}
-
-For each candidate return:
-- index (0-based, matching input order)
-- score (integer 1-10, be discriminating — use the full range)
-- score_rationale (1 sentence explaining the score)
-- strengths (array of 3-5 specific bullets grounded in the resume)
-- weaknesses (array of 2-3 specific bullets grounded in the resume)
-- fit_summary (1 concise sentence on overall fit for THIS role)`;
-
-      const scoredRaw = await callClaude([{ role: "user", content: scoringPrompt }], "", 3000);
-      const scored = safeParseJSON(scoredRaw);
-
-      const merged = extracted.map((c, i) => {
-        const s = scored.find(x => x.index === i) || scored[i] || {};
-        return { id: i, ...c, fileName: resumeFiles[i].name, score: s.score || 5, score_rationale: s.score_rationale || "", strengths: s.strengths || [], weaknesses: s.weaknesses || [], fit_summary: s.fit_summary || "" };
-      }).sort((a, b) => b.score - a.score);
+      setAnalysisStatus(`Analyzing ${resumeFiles.length} resume(s) on your Mac (LM Studio)…`);
+      const { candidates: merged } = await postJson("/api/analyze", {
+        job,
+        resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
+      });
 
       setCandidates(merged);
       setPage("results");
@@ -191,16 +155,12 @@ For each candidate return:
     const newChat = [...chat, { role: "user", content: msg }];
     setChat(newChat);
     setChatLoading(true);
-    const system = `You are a hiring assistant. A recruiter is asking about a specific candidate for a job opening. Answer accurately using only information from the candidate's resume data. Be concise and specific.
-
-JOB: ${job.title}
-JOB DESCRIPTION: ${job.description}
-REQUIREMENTS: ${job.requirements}
-
-CANDIDATE DATA:
-${JSON.stringify(selected, null, 2)}`;
     try {
-      const reply = await callClaude(newChat, system, 600);
+      const { reply } = await postJson("/api/chat", {
+        job,
+        selected,
+        messages: newChat.map((m) => ({ role: m.role, content: m.content })),
+      });
       setChat([...newChat, { role: "assistant", content: reply }]);
     } catch (e) { setChat([...newChat, { role: "assistant", content: "Sorry, I ran into an error. Please try again." }]); }
     setChatLoading(false);
@@ -209,15 +169,8 @@ ${JSON.stringify(selected, null, 2)}`;
   // ── Email ─────────────────────────────────────────────────────────────────
   async function generateEmail() {
     setEmailState("generating");
-    const prompt = `Write a professional, warm, and concise interview invitation email to ${selected.name} for the position of ${job.title}.
-
-Mention 1-2 specific things from their background that impressed the team: ${selected.strengths?.slice(0, 2).join("; ")}.
-
-Ask them to reply to schedule a 30-minute intro call. Sign off as "The Hiring Team at [Company]".
-
-Write only the email body, no subject line.`;
     try {
-      const draft = await callClaude([{ role: "user", content: prompt }], "", 600);
+      const { draft } = await postJson("/api/email", { job, selected });
       setEmailDraft(draft);
       setEmailState("editing");
     } catch (e) { setEmailState("idle"); alert("Failed to generate email."); }
@@ -316,10 +269,10 @@ Write only the email body, no subject line.`;
   // PAGE: UPLOAD
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "upload") {
-    function onDrop(e) {
+    function onDrop(e: DragEvent<HTMLDivElement>) {
       e.preventDefault();
       setDragging(false);
-      const files = Array.from(e.dataTransfer.files).filter(f => f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx"));
+      const files = Array.from(e.dataTransfer.files).filter((f: File) => f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx"));
       if (!files.length) return alert("Please drop PDF or text files.");
       const synth = { target: { files, value: "" } };
       handleFileSelect(synth);
@@ -543,7 +496,25 @@ Write only the email body, no subject line.`;
   return null;
 }
 
-function CandidateRow({ c, rank, isTop, onClick }) {
+type CandidateRowData = {
+  name?: string;
+  score?: number;
+  recent_role?: string;
+  fit_summary?: string;
+};
+
+function CandidateRow({
+  c,
+  rank,
+  isTop = false,
+  onClick,
+}: {
+  c: CandidateRowData;
+  rank: number;
+  isTop?: boolean;
+  onClick: () => void;
+}) {
+  const summary = c.fit_summary && typeof c.fit_summary === "string" ? c.fit_summary.slice(0, 55) : "";
   return (
     <div onClick={onClick} className={`flex items-center justify-between bg-white rounded-xl px-4 py-3.5 shadow-sm border cursor-pointer hover:shadow-md hover:border-indigo-200 transition group ${isTop ? "border-indigo-100" : "border-gray-100"}`}>
       <div className="flex items-center gap-3 min-w-0">
@@ -553,11 +524,11 @@ function CandidateRow({ c, rank, isTop, onClick }) {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-800 truncate">{c.name}</p>
-          <p className="text-xs text-gray-400 truncate">{c.recent_role || c.fit_summary?.slice(0,55) || ""}</p>
+          <p className="text-xs text-gray-400 truncate">{c.recent_role || summary || ""}</p>
         </div>
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-3">
-        <ScorePill score={c.score} />
+        <ScorePill score={c.score ?? 0} />
         <svg className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
       </div>
     </div>

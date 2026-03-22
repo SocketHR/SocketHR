@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "npm run start --prefix server",
+    "server:dev": "npm run dev --prefix server"
   },
   "dependencies": {
     "react": "^18.3.1",
