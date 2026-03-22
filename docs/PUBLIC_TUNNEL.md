@@ -14,7 +14,7 @@ LM Studio is **not** exposed publicly; only the Node server is. The server still
 
 The app fetches **`/runtime-config.json`** from the same host as the website. Commit default is empty `apiBase` ([`public/runtime-config.json`](../public/runtime-config.json)).
 
-The repo ships [`public/runtime-config.json`](../public/runtime-config.json) with **`https://api.sockethr.com`** for **production** builds. Local **`npm run dev`** ignores that file so the API stays on **localhost:3000**.
+The repo ships [`public/runtime-config.json`](../public/runtime-config.json) with **`https://api.sockethr.com`**. **`npm run dev`** loads that file too, so **this Mac uses the same public API URL as any other device**. Use **`VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000`** only when you want the UI to talk to a local server without the tunnel.
 
 To use a different public URL, edit **`public/runtime-config.json`** (or override with **`VITE_SOCKETHR_API_BASE`** on Vercel) and redeploy. See [TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md).
 

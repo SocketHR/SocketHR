@@ -53,7 +53,13 @@ npm run server:dev
 npm run dev
 ```
 
-Open the Vite URL (e.g. `http://localhost:5173`). The UI calls `http://127.0.0.1:3000` by default.
+Open the Vite URL (e.g. `http://localhost:5173`). By default the UI uses **`https://api.sockethr.com`** (from `public/runtime-config.json`), same as production. To call **only** your local Node server during dev, add **`.env.local`** in the repo root:
+
+```env
+VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000
+```
+
+Restart `npm run dev`.
 
 ## Point the frontend at another host
 

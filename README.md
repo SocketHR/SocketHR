@@ -19,7 +19,7 @@ See **[docs/STARTUP.md](docs/STARTUP.md)** for the exact commands to start LM St
 
 | Command | Purpose |
 |--------|---------|
-| `npm run dev` | Vite dev server (local UI → localhost API) |
+| `npm run dev` | Vite dev server (UI uses **`https://api.sockethr.com`** like production; override with `VITE_SOCKETHR_API_BASE` for local-only API) |
 | `npm run build` | Production static `dist/` |
 | `npm run server` | SocketHR API on port 3000 |
 

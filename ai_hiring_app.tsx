@@ -7,9 +7,14 @@ import {
   type DragEvent,
 } from "react";
 
-const DEFAULT_API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SOCKETHR_API_BASE) ||
-  "http://127.0.0.1:3000";
+/** Build-time override only. If unset, default matches committed public/runtime-config.json. */
+const VITE_API_RAW = import.meta.env.VITE_SOCKETHR_API_BASE;
+const hasViteApiOverride =
+  typeof VITE_API_RAW === "string" && VITE_API_RAW.trim().length > 0;
+
+const DEFAULT_API_BASE = hasViteApiOverride
+  ? VITE_API_RAW.trim().replace(/\/$/, "")
+  : "https://api.sockethr.com";
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
 function Spinner({ label = "Processing…" }) {
@@ -95,9 +100,9 @@ export default function App() {
     fetch(fetchUrl, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: unknown) => {
-        // Production (sockethr.com / Vercel): use public/runtime-config.json for the public API.
-        // Dev (`npm run dev`): skip so local default stays http://127.0.0.1:3000 unless VITE_SOCKETHR_API_BASE is set.
-        if (!import.meta.env.PROD) return;
+        // Same behavior in dev and production: follow public/runtime-config.json so this machine
+        // hits the same HTTPS API as every other device (unless VITE_SOCKETHR_API_BASE is set).
+        if (hasViteApiOverride) return;
         if (!data || typeof data !== "object" || data === null || !("apiBase" in data)) return;
         const v = (data as { apiBase?: unknown }).apiBase;
         if (typeof v !== "string") return;

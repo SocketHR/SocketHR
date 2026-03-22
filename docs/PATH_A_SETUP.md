@@ -71,6 +71,8 @@ In **Vercel** → project / domain → DNS for **`sockethr.com`**, add the recor
 
 Use the **UUID** from the script output (not `https://`, no path). Do **not** point `api` at `cname.vercel-dns.com` if the tunnel should serve the API.
 
+If **`curl https://api.sockethr.com/health`** returns **Vercel `DEPLOYMENT_NOT_FOUND`**, traffic is still hitting Vercel’s app router. **Remove `api.sockethr.com`** from any Vercel project’s **Domains** (Production) so only the **DNS CNAME** to `*.cfargotunnel.com` applies.
+
 ## 4. Every session
 
 1. **LM Studio** + local model server (if you use it).

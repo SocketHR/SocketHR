@@ -18,7 +18,7 @@
 
 The app loads **`/runtime-config.json`** from the **same origin** as the website (e.g. `https://sockethr.com/runtime-config.json`).
 
-Production builds load [`public/runtime-config.json`](../public/runtime-config.json) (committed **`https://api.sockethr.com`**). **`npm run dev`** does not apply that file — local dev uses **localhost:3000** (or `VITE_SOCKETHR_API_BASE`).
+[`public/runtime-config.json`](../public/runtime-config.json) (committed **`https://api.sockethr.com`**) is loaded in **both** production and **`npm run dev`**, so every device uses the same API base unless you set **`VITE_SOCKETHR_API_BASE`** for a local-only server.
 
 **To point production at your tunnel** (HTTPS, no trailing slash):
 

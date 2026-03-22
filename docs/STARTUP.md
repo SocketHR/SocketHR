@@ -69,7 +69,7 @@ cd /Users/yanlevin/github/sockethr
 npm run dev
 ```
 
-Open **http://localhost:5173** — dev mode still talks to **http://127.0.0.1:3000** (runtime-config override is **disabled** in development).
+Open **http://localhost:5173** — dev mode loads **`public/runtime-config.json`** the same as production, so the UI calls **`https://api.sockethr.com`** (your tunnel must be up for API calls to succeed). To force a **local-only** API during dev, set **`VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000`** (e.g. in `.env.local`).
 
 ---
 
