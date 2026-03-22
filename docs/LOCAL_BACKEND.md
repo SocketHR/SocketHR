@@ -95,4 +95,4 @@ LM Studio must also be running (or use LM Studio CLI/headless if you automate lo
 
 ## Public site (sockethr.com) + phone on LTE
 
-See **[PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md)** — HTTPS tunnel to your Mac, `VITE_SOCKETHR_API_BASE`, and optional GitHub Pages workflow.
+See **[PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md)** — HTTPS tunnel to your Mac, `VITE_SOCKETHR_API_BASE`, **`runtime-config.json`**, and optional GitHub Pages workflow. If the phone site fails, use **[TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md)**.

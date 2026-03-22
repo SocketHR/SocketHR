@@ -10,6 +10,14 @@ Use this when **[https://sockethr.com](https://sockethr.com)** should talk to **
 
 LM Studio is **not** exposed publicly; only the Node server is. The server still calls LM Studio on localhost.
 
+## Runtime `runtime-config.json` (fix phones without rebuilding JS)
+
+The app fetches **`/runtime-config.json`** from the same host as the website. Commit default is empty `apiBase` ([`public/runtime-config.json`](../public/runtime-config.json)).
+
+The repo ships [`public/runtime-config.json`](../public/runtime-config.json) with **`https://api.sockethr.com`** for **production** builds. Local **`npm run dev`** ignores that file so the API stays on **localhost:3000**.
+
+To use a different public URL, edit **`public/runtime-config.json`** (or override with **`VITE_SOCKETHR_API_BASE`** on Vercel) and redeploy. See [TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md).
+
 ---
 
 ## Step A — Tunnel public HTTPS → port 3000
@@ -36,7 +44,7 @@ See also [deploy/cloudflared/config.example.yml](../deploy/cloudflared/config.ex
 ngrok http 3000
 ```
 
-Use the printed **https://**.ngrok-free.app** URL as `VITE_SOCKETHR_API_BASE` (free tier URLs may change on restart unless you reserve one).
+Use the printed **https://….ngrok-free.app** URL in **`runtime-config.json`** `apiBase` or as `VITE_SOCKETHR_API_BASE` when building (free tier URLs may change on restart unless you reserve one).
 
 ### Option 3: Tailscale Funnel
 

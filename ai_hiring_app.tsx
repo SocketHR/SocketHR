@@ -1,19 +1,15 @@
-import { useState, useRef, useEffect, type ChangeEvent, type DragEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
 
-const API_BASE =
+const DEFAULT_API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_SOCKETHR_API_BASE) ||
   "http://127.0.0.1:3000";
-
-async function postJson(path, body) {
-  const res = await fetch(`${API_BASE.replace(/\/$/, "")}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `${path} failed (${res.status})`);
-  return data;
-}
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
 function Spinner({ label = "Processing…" }) {
@@ -33,8 +29,38 @@ function ScorePill({ score }) {
   return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${bg}`}>{score}/10</span>;
 }
 
-function Nav({ isLoggedIn, onLogin, onLogout, onHome }) {
+function Nav({
+  isLoggedIn,
+  onLogin,
+  onLogout,
+  onHome,
+  apiBase = DEFAULT_API_BASE,
+  apiConfigLoaded = true,
+}: {
+  isLoggedIn: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
+  onHome: () => void;
+  apiBase?: string;
+  apiConfigLoaded?: boolean;
+}) {
+  const showLocalApiWarning =
+    apiConfigLoaded &&
+    typeof window !== "undefined" &&
+    !/^localhost$/i.test(window.location.hostname) &&
+    window.location.hostname !== "127.0.0.1" &&
+    (apiBase.includes("127.0.0.1") || apiBase.includes("localhost"));
+
   return (
+    <>
+      {showLocalApiWarning && (
+        <div className="bg-amber-100 text-amber-900 text-xs px-4 py-2 text-center border-b border-amber-200">
+          API URL points to this device (localhost). Phones and other computers cannot reach your Mac.
+          Set <code className="font-mono">apiBase</code> in{" "}
+          <code className="font-mono">/runtime-config.json</code> on the server to your public HTTPS API
+          (see docs/TROUBLESHOOTING_MOBILE.md).
+        </div>
+      )}
     <nav className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
       <div className="flex items-center gap-2 cursor-pointer" onClick={onHome}>
         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow">
@@ -52,11 +78,53 @@ function Nav({ isLoggedIn, onLogin, onLogout, onHome }) {
         <button onClick={onLogin} className="text-sm font-medium text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-1.5 rounded-lg transition">Log in</button>
       )}
     </nav>
+    </>
   );
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
+  const [apiConfigLoaded, setApiConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL || "/";
+    const prefix = base.endsWith("/") ? base : `${base}/`;
+    const fetchUrl = `${prefix}runtime-config.json?t=${Date.now()}`;
+
+    fetch(fetchUrl, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        // Production (sockethr.com / Vercel): use public/runtime-config.json for the public API.
+        // Dev (`npm run dev`): skip so local default stays http://127.0.0.1:3000 unless VITE_SOCKETHR_API_BASE is set.
+        if (!import.meta.env.PROD) return;
+        if (!data || typeof data !== "object" || data === null || !("apiBase" in data)) return;
+        const v = (data as { apiBase?: unknown }).apiBase;
+        if (typeof v !== "string") return;
+        const trimmed = v.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+          setApiBase(trimmed.replace(/\/$/, ""));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setApiConfigLoaded(true));
+  }, []);
+
+  const postJson = useCallback(
+    async (path: string, body: unknown) => {
+      const base = apiBase.replace(/\/$/, "");
+      const res = await fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
+      return data;
+    },
+    [apiBase]
+  );
+
   const [page, setPage] = useState("home");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [pendingNav, setPendingNav] = useState(null);
@@ -185,7 +253,7 @@ export default function App() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "home") return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex flex-col">
-      <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => { setIsLoggedIn(false); }} onHome={() => setPage("home")} />
+      <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => { setIsLoggedIn(false); }} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center py-16">
         <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl">
           <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -209,7 +277,7 @@ export default function App() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "login") return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Nav isLoggedIn={isLoggedIn} onLogin={() => {}} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} />
+      <Nav isLoggedIn={isLoggedIn} onLogin={() => {}} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
           <h2 className="text-2xl font-bold text-gray-900 mb-1">Sign in</h2>
@@ -232,7 +300,7 @@ export default function App() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "job") return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} />
+      <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-xl">
           <div className="flex items-center gap-3 mb-6">
@@ -280,7 +348,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} />
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className="flex-1 flex items-center justify-center px-4 py-10">
           <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-2xl">
             <div className="flex items-center gap-3 mb-2">
@@ -341,7 +409,7 @@ export default function App() {
     const allVisible = isLoggedIn ? candidates : topCandidates;
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} />
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className="max-w-3xl mx-auto w-full px-4 py-8">
           <div className="flex items-start justify-between mb-1">
             <div>
@@ -396,7 +464,7 @@ export default function App() {
     const c = selected;
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} />
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className="max-w-2xl mx-auto w-full px-4 py-6">
           <button onClick={() => setPage("results")} className="text-sm text-indigo-500 hover:underline mb-4 flex items-center gap-1">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
