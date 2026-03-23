@@ -88,7 +88,7 @@ function Nav({
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
-export default function App() {
+export function HiringApp() {
   const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
   const [apiConfigLoaded, setApiConfigLoaded] = useState(false);
 

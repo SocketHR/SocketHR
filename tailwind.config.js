@@ -6,7 +6,12 @@ export default {
     './*.{js,ts,jsx,tsx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        display: ['"Syne"', 'system-ui', 'sans-serif'],
+        adv: ['"DM Sans"', 'system-ui', 'sans-serif'],
+      },
+    },
   },
   plugins: [],
 }
