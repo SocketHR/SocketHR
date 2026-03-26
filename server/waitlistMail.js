@@ -69,7 +69,7 @@ export async function sendWaitlistEmail(data) {
   });
 
   const { firstName, lastName, company, email, phone } = data;
-  const subject = `[SocketAI waitlist] ${firstName} ${lastName} <${email}>`;
+  const subject = `[SocketHR waitlist] ${firstName} ${lastName} <${email}>`;
   const text = [
     "New waitlist submission:",
     "",
