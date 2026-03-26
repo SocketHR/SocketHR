@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useSockethrRuntimeConfig } from "../../lib/useSockethrRuntimeConfig";
 
+const WAITLIST_NOTES_MAX_LENGTH = 500;
+
 function CheckIcon() {
   return (
     <svg className="h-5 w-5 shrink-0 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -17,6 +19,7 @@ export function AdvertisingHome() {
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,6 +51,7 @@ export function AdvertisingHome() {
           company: company.trim(),
           email: email.trim(),
           phone: phone.trim(),
+          notes: notes.trim(),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -315,6 +319,19 @@ export function AdvertisingHome() {
                   placeholder="+1 …"
                   autoComplete="tel"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Notes (optional)</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  maxLength={WAITLIST_NOTES_MAX_LENGTH}
+                  className="mt-1.5 min-h-28 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  placeholder="Anything you want us to know about your hiring goals, team size, or timeline."
+                />
+                <p className="mt-1 text-right text-xs text-zinc-500">
+                  {notes.length}/{WAITLIST_NOTES_MAX_LENGTH}
+                </p>
               </div>
               {submitError && (
                 <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">

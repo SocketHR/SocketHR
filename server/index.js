@@ -50,7 +50,7 @@ app.get("/health", (_req, res) => {
 
 /**
  * POST /api/waitlist
- * body: { firstName, lastName, company?, email, phone? }
+ * body: { firstName, lastName, company?, email, phone?, notes? }
  * Sends notification via Gmail (or other SMTP) when WAITLIST_SMTP_* env vars are set.
  */
 app.post("/api/waitlist", async (req, res) => {

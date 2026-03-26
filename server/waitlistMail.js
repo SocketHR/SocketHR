@@ -21,7 +21,7 @@ function trimStr(v, field) {
 
 /**
  * @param {unknown} body
- * @returns {{ ok: true, data: { firstName: string, lastName: string, company: string, email: string, phone: string } } | { ok: false, error: string }}
+ * @returns {{ ok: true, data: { firstName: string, lastName: string, company: string, email: string, phone: string, notes: string } } | { ok: false, error: string }}
  */
 export function validateWaitlistPayload(body) {
   if (!body || typeof body !== "object") {
@@ -38,9 +38,10 @@ export function validateWaitlistPayload(body) {
     if (!EMAIL_RE.test(emailRaw)) return { ok: false, error: "Invalid email" };
     const company = trimStr(o.company, "company");
     const phone = trimStr(o.phone, "phone");
+    const notes = trimStr(o.notes, "notes");
     return {
       ok: true,
-      data: { firstName, lastName, company, email: emailRaw, phone },
+      data: { firstName, lastName, company, email: emailRaw, phone, notes },
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Validation failed";
@@ -59,10 +60,10 @@ function escapeHtml(input) {
 }
 
 /**
- * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string }} data
+ * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string, notes: string }} data
  */
 function buildInternalWaitlistEmail(data) {
-  const { firstName, lastName, company, email, phone } = data;
+  const { firstName, lastName, company, email, phone, notes } = data;
   return {
     subject: `[SocketHR waitlist] ${firstName} ${lastName} <${email}>`,
     text: [
@@ -73,12 +74,13 @@ function buildInternalWaitlistEmail(data) {
       `Company: ${company || "(not provided)"}`,
       `Email: ${email}`,
       `Phone: ${phone || "(not provided)"}`,
+      `Notes: ${notes || "(not provided)"}`,
     ].join("\n"),
   };
 }
 
 /**
- * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string }} data
+ * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string, notes: string }} data
  */
 function buildClientWaitlistEmail(data) {
   const safeFirstName = escapeHtml(data.firstName);
@@ -146,7 +148,7 @@ function buildClientWaitlistEmail(data) {
 }
 
 /**
- * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string }} data
+ * @param {{ firstName: string, lastName: string, company: string, email: string, phone: string, notes: string }} data
  */
 export async function sendWaitlistEmail(data) {
   const host = process.env.WAITLIST_SMTP_HOST?.trim() || "smtp.gmail.com";
