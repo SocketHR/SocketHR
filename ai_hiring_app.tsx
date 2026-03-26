@@ -6,15 +6,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-
-/** Build-time override only. If unset, default matches committed public/runtime-config.json. */
-const VITE_API_RAW = import.meta.env.VITE_SOCKETHR_API_BASE;
-const hasViteApiOverride =
-  typeof VITE_API_RAW === "string" && VITE_API_RAW.trim().length > 0;
-
-const DEFAULT_API_BASE = hasViteApiOverride
-  ? VITE_API_RAW.trim().replace(/\/$/, "")
-  : "https://api.sockethr.com";
+import { DEFAULT_API_BASE, useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
 function Spinner({ label = "Processing…" }) {
@@ -89,31 +81,7 @@ function Nav({
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export function HiringApp() {
-  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
-  const [apiConfigLoaded, setApiConfigLoaded] = useState(false);
-
-  useEffect(() => {
-    const base = import.meta.env.BASE_URL || "/";
-    const prefix = base.endsWith("/") ? base : `${base}/`;
-    const fetchUrl = `${prefix}runtime-config.json?t=${Date.now()}`;
-
-    fetch(fetchUrl, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: unknown) => {
-        // Same behavior in dev and production: follow public/runtime-config.json so this machine
-        // hits the same HTTPS API as every other device (unless VITE_SOCKETHR_API_BASE is set).
-        if (hasViteApiOverride) return;
-        if (!data || typeof data !== "object" || data === null || !("apiBase" in data)) return;
-        const v = (data as { apiBase?: unknown }).apiBase;
-        if (typeof v !== "string") return;
-        const trimmed = v.trim();
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-          setApiBase(trimmed.replace(/\/$/, ""));
-        }
-      })
-      .catch(() => {})
-      .finally(() => setApiConfigLoaded(true));
-  }, []);
+  const { apiBase, configLoaded: apiConfigLoaded } = useSockethrRuntimeConfig();
 
   const postJson = useCallback(
     async (path: string, body: unknown) => {

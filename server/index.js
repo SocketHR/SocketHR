@@ -4,6 +4,11 @@ import { randomUUID } from "crypto";
 import { chatCompletion } from "./lmstudio.js";
 import { saveJobSubmission, saveResults } from "./storage.js";
 import { resumeToText } from "./resumeText.js";
+import {
+  isWaitlistSmtpConfigured,
+  validateWaitlistPayload,
+  sendWaitlistEmail,
+} from "./waitlistMail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -41,6 +46,29 @@ app.use(express.json({ limit: "50mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "sockethr-server" });
+});
+
+/**
+ * POST /api/waitlist
+ * body: { firstName, lastName, company?, email, phone? }
+ * Sends notification via Gmail (or other SMTP) when WAITLIST_SMTP_* env vars are set.
+ */
+app.post("/api/waitlist", async (req, res) => {
+  if (!isWaitlistSmtpConfigured()) {
+    console.error("POST /api/waitlist: set WAITLIST_SMTP_USER and WAITLIST_SMTP_PASS");
+    return res.status(503).json({ error: "Waitlist email is not configured" });
+  }
+  const parsed = validateWaitlistPayload(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
+  }
+  try {
+    await sendWaitlistEmail(parsed.data);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("POST /api/waitlist send failed", e);
+    res.status(500).json({ error: "Failed to send message" });
+  }
 });
 
 /**

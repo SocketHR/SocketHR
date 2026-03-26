@@ -25,6 +25,10 @@ Environment variables:
 | `PORT` | `3000` | HTTP port for SocketHR server |
 | `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` allows LAN access) |
 | `SOCKETHR_DATA_DIR` | *(repo)*`data/jobs` | Where submissions are stored |
+| `WAITLIST_SMTP_USER` / `WAITLIST_SMTP_PASS` | *(unset)* | Required for `/api/waitlist` email (e.g. Gmail + App Password) |
+| `WAITLIST_SMTP_HOST` / `WAITLIST_SMTP_PORT` | `smtp.gmail.com` / `587` | SMTP endpoint |
+| `WAITLIST_MAIL_FROM` | same as SMTP user | `From:` header |
+| `WAITLIST_MAIL_TO` | `contact@sockethr.com` | `To:` recipient |
 
 Load `.env` when starting Node (Node 20+):
 
@@ -79,6 +83,7 @@ Restart `npm run dev`.
 | `POST` | `/api/analyze` | `{ job, resumes: [{ name, base64, type }] }` |
 | `POST` | `/api/chat` | `{ job, selected, messages: [{ role, content }] }` |
 | `POST` | `/api/email` | `{ job, selected }` |
+| `POST` | `/api/waitlist` | `{ firstName, lastName, company?, email, phone? }` |
 
 PDFs are **text-extracted on the server** (no vision); use PDF or `.txt` for best results.
 
@@ -98,6 +103,14 @@ Each analyze run creates `data/jobs/<uuid>/` with:
 - **launchd:** add a plist that runs `node` with `--env-file=.env` and `WorkingDirectory` set to `server/`.
 
 LM Studio must also be running (or use LM Studio CLI/headless if you automate loading the model).
+
+## Advertising waitlist email (Gmail SMTP)
+
+The `/advertising` waitlist form `POST`s JSON to **`POST /api/waitlist`** on the same host as `apiBase` (see [`public/runtime-config.json`](../public/runtime-config.json)). The Node server sends mail with **Nodemailer** over SMTP (defaults work for **Gmail**).
+
+1. In Google Account → **Security**, enable **2-Step Verification**, then create an [**App password**](https://support.google.com/accounts/answer/185833) for Mail.
+2. In `server/.env` set at minimum **`WAITLIST_SMTP_USER`** (full Gmail) and **`WAITLIST_SMTP_PASS`** (app password). Optional: **`WAITLIST_MAIL_FROM`** (defaults to user), **`WAITLIST_MAIL_TO`** (defaults to `contact@sockethr.com`), **`WAITLIST_SMTP_HOST`** / **`WAITLIST_SMTP_PORT`**.
+3. Restart the server (`npm run server` or your process manager). If credentials are missing, the route returns **503** and the UI shows a generic error.
 
 ## Public site (sockethr.com) + phone on LTE
 

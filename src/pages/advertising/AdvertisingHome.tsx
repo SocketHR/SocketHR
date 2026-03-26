@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useSockethrRuntimeConfig } from "../../lib/useSockethrRuntimeConfig";
 import { ProductCarousel } from "./ProductCarousel";
 
 function CheckIcon() {
@@ -10,6 +11,8 @@ function CheckIcon() {
 }
 
 export function AdvertisingHome() {
+  const { apiBase, configLoaded } = useSockethrRuntimeConfig();
+  const waitlistPostUrl = `${apiBase.replace(/\/$/, "")}/api/waitlist`;
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [company, setCompany] = useState("");
@@ -17,6 +20,8 @@ export function AdvertisingHome() {
   const [phone, setPhone] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   function validate() {
     const e: Record<string, string> = {};
@@ -29,10 +34,33 @@ export function AdvertisingHome() {
     return Object.keys(e).length === 0;
   }
 
-  function onSubmit(ev: FormEvent) {
+  async function onSubmit(ev: FormEvent) {
     ev.preventDefault();
+    setSubmitError("");
     if (!validate()) return;
-    setSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(waitlistPostUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          company: company.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -289,11 +317,17 @@ export function AdvertisingHome() {
                   autoComplete="tel"
                 />
               </div>
+              {submitError && (
+                <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
+                  {submitError}
+                </p>
+              )}
               <button
                 type="submit"
-                className="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-lg font-bold text-white shadow-lg transition hover:brightness-110"
+                disabled={isSubmitting || !configLoaded}
+                className="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-lg font-bold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Submit
+                {isSubmitting ? "Sending…" : "Submit"}
               </button>
               <p className="text-center text-xs text-zinc-500">Launch partners will receive a lifetime discount on the Pro Plan.</p>
             </form>
