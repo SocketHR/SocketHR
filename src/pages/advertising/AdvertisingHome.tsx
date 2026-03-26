@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from "react";
 import { useSockethrRuntimeConfig } from "../../lib/useSockethrRuntimeConfig";
-import { ProductCarousel } from "./ProductCarousel";
 
 function CheckIcon() {
   return (
@@ -334,8 +333,6 @@ export function AdvertisingHome() {
           )}
         </div>
       </section>
-
-      <ProductCarousel />
 
       <footer className="border-t border-white/10 py-12 text-center text-sm text-zinc-500">
         <p>© {new Date().getFullYear()} SocketAI. All rights reserved.</p>
