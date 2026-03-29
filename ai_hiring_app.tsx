@@ -55,6 +55,28 @@ function ScorePill({ score }: { score: number }) {
   return <span className={`rounded-full px-2.5 py-0.5 font-ui text-xs font-semibold tabular-nums ${style}`}>{score}/10</span>;
 }
 
+/** Two-step flow: visual progress only (no “Step N of M” copy). */
+function WizardProgress({ step, total = 2 }: { step: number; total?: number }) {
+  const pct = (step / total) * 100;
+  return (
+    <div
+      className="mb-6"
+      role="progressbar"
+      aria-valuenow={step}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-label={`Step ${step} of ${total}`}
+    >
+      <div className="h-1 overflow-hidden rounded-full bg-paper-line/35">
+        <div
+          className="h-full rounded-full bg-accent/40 transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function Nav({
   isLoggedIn,
   onLogin,
@@ -287,28 +309,13 @@ export function HiringApp() {
       <div className={shell}>
         <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
-          <p className="font-ui text-xs font-medium uppercase tracking-[0.2em] text-ink-faint">Hiring workflow</p>
-          <h1 className="mt-4 text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
+          <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
           <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
             Add resumes, get ranked candidates with scores and summaries — then dig in with interview tools.
           </p>
           <button type="button" onClick={() => setPage("job")} className={`mt-10 px-7 py-3 ${btnPrimary}`}>
             Create job listing
           </button>
-          <ul className="mt-16 space-y-3 font-ui text-sm text-ink-muted">
-            <li className="flex gap-3">
-              <span className="w-5 shrink-0 font-semibold text-accent/70">1</span>
-              Define the role and what good looks like.
-            </li>
-            <li className="flex gap-3">
-              <span className="w-5 shrink-0 font-semibold text-accent/70">2</span>
-              Upload résumés (PDF or text).
-            </li>
-            <li className="flex gap-3">
-              <span className="w-5 shrink-0 font-semibold text-accent/70">3</span>
-              Review rankings, open profiles, draft outreach.
-            </li>
-          </ul>
         </div>
       </div>
     );
@@ -322,16 +329,10 @@ export function HiringApp() {
         <Nav isLoggedIn={isLoggedIn} onLogin={() => {}} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content} style={{ maxWidth: "24rem" }}>
           <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
-          <p className="mt-2 font-ui text-sm text-ink-muted">Access all candidates and profiles</p>
           <div className="mt-8 flex flex-col gap-3">
             <input className={inputClass} placeholder="Email address" />
             <input className={inputClass} type="password" placeholder="Password" />
             <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Sign in</button>
-            <div className="my-1 flex items-center gap-3">
-              <div className="h-px flex-1 bg-paper-line/50" />
-              <span className="font-ui text-xs text-ink-faint">or</span>
-              <div className="h-px flex-1 bg-paper-line/50" />
-            </div>
             <button type="button" onClick={handleLogin} className={`py-2.5 ${btnSecondary}`}>Continue with demo account</button>
           </div>
           <button
@@ -353,8 +354,8 @@ export function HiringApp() {
       <div className={shell}>
         <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
-          <p className="font-ui text-xs text-ink-faint">Step 1 of 2</p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
+          <WizardProgress step={1} />
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
           <div className="mt-8 flex flex-col gap-5">
             <div>
               <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job title <span className="text-accent/60">*</span></label>
@@ -378,7 +379,7 @@ export function HiringApp() {
               onClick={() => setPage("upload")}
               className={`mt-1 py-3 ${btnPrimary}`}
             >
-              Next: upload résumés
+              Continue
             </button>
           </div>
         </div>
@@ -403,35 +404,33 @@ export function HiringApp() {
       <div className={shell}>
         <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
-          <p className="font-ui text-xs text-ink-faint">Step 2 of 2</p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
-          <p className="mt-2 font-ui text-sm text-ink-muted">PDF or text files</p>
+          <WizardProgress step={2} />
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
 
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             onClick={() => fileInputRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
+            aria-label="Upload résumés: drop PDF or text files, or click to choose files."
             className={`mt-8 flex cursor-pointer flex-col items-center rounded-xl py-14 transition-all duration-200 ${
               dragging ? "bg-accent-soft/30" : "bg-paper-line/15 hover:bg-paper-line/25"
             }`}
           >
-            <svg className="mb-3 h-8 w-8 text-ink-faint/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <svg className="h-10 w-10 text-ink-faint/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            <p className="font-ui text-sm text-ink-muted">Drag and drop files here, or click to browse</p>
             <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
           </div>
 
           {resumeFiles.length > 0 && (
             <div className="mt-6 flex max-h-52 flex-col gap-1 overflow-y-auto">
-              <p className="mb-1 font-ui text-xs font-medium uppercase tracking-wider text-ink-faint">
-                {resumeFiles.length} file{resumeFiles.length !== 1 ? "s" : ""} queued
-              </p>
               {resumeFiles.map((f) => (
                 <div key={f.name} className="flex items-center justify-between rounded-lg py-2 transition-colors duration-150 hover:bg-paper-line/15">
                   <div className="flex min-w-0 items-center gap-3 pl-1">
-                    <span className="font-ui text-[10px] font-bold uppercase text-ink-faint/60">PDF</span>
                     <span className="truncate font-ui text-sm text-ink">{f.name}</span>
                   </div>
                   <button
@@ -470,21 +469,14 @@ export function HiringApp() {
       <div className={shell}>
         <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className="fade-in-up mx-auto w-full max-w-3xl px-6 py-10 text-left sm:px-10">
-          <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
-          <div className="mt-1 flex items-baseline gap-4">
-            <p className="font-ui text-sm text-ink-faint">{candidates.length} candidate{candidates.length !== 1 ? "s" : ""} analyzed</p>
-            <button type="button" onClick={() => setPage("upload")} className="font-ui text-xs text-accent/80 transition-colors duration-150 hover:text-accent">
-              + Add more
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
+            <button type="button" onClick={() => setPage("upload")} className="shrink-0 rounded-lg px-2.5 py-1.5 font-ui text-sm text-accent/85 transition-colors duration-150 hover:bg-accent/5 hover:text-accent">
+              Add résumés
             </button>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2 font-ui text-xs text-ink-faint">
-            <span className="rounded-full bg-paper-line/20 px-2.5 py-1">Top {Math.round((cutoff / candidates.length) * 100)}% highlighted</span>
-            {!isLoggedIn && <span className="rounded-full bg-paper-line/20 px-2.5 py-1">Sign in to view all</span>}
-          </div>
-
-          <h3 className="mb-3 mt-10 font-ui text-[11px] font-semibold uppercase tracking-widest text-ink-faint">Top candidates</h3>
-          <div className="mb-8 flex flex-col">
+          <div className="mt-10 flex flex-col">
             {topCandidates.map((c, i) => (
               <CandidateRow key={c.id ?? i} c={c} rank={i + 1} isTop onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
             ))}
@@ -492,7 +484,7 @@ export function HiringApp() {
 
           {isLoggedIn && candidates.length > cutoff && (
             <>
-              <h3 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-ink-faint">All other candidates</h3>
+              <div className="my-8 h-px bg-paper-line/40" aria-hidden />
               <div className="mb-8 flex flex-col">
                 {candidates.slice(cutoff).map((c, i) => (
                   <CandidateRow key={c.id ?? cutoff + i} c={c} rank={cutoff + i + 1} onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
@@ -502,11 +494,9 @@ export function HiringApp() {
           )}
 
           {!isLoggedIn && candidates.length > cutoff && (
-            <div className="mt-2">
-              <p className="text-lg font-semibold text-ink">View all {candidates.length} candidates</p>
-              <p className="mt-1 font-ui text-sm text-ink-muted">Sign in to unlock full rankings, profiles, AI chat, and email tools.</p>
-              <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`mt-4 px-6 py-2.5 ${btnPrimary}`}>
-                Log in / Sign up
+            <div className="mt-10">
+              <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`px-6 py-2.5 ${btnPrimary}`}>
+                View all {candidates.length} — sign in
               </button>
             </div>
           )}
@@ -527,12 +517,12 @@ export function HiringApp() {
           <button
             type="button"
             onClick={() => setPage("results")}
-            className="mb-6 flex items-center gap-1 font-ui text-sm text-ink-faint transition-colors duration-150 hover:text-ink-muted"
+            aria-label="Back to results"
+            className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Back to results
           </button>
 
           {/* Header */}
@@ -554,7 +544,7 @@ export function HiringApp() {
           </div>
 
           <p className="mt-6 text-[15px] italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
-          {c.score_rationale && <p className="mt-2 font-ui text-xs text-ink-faint">{c.score_rationale}</p>}
+          {c.score_rationale && <p className="mt-2 text-sm text-ink-muted">{c.score_rationale}</p>}
 
           {c.skills && c.skills.length > 0 && (
             <div className="mt-5 flex flex-wrap gap-1.5">
@@ -567,7 +557,7 @@ export function HiringApp() {
           {/* Strengths & Gaps */}
           <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
             <div>
-              <h4 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-emerald-800/70">Strengths</h4>
+              <p className="mb-2 text-sm font-semibold text-ink">Strengths</p>
               <ul className="flex flex-col gap-2">
                 {(c.strengths || []).map((s, i) => (
                   <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
@@ -577,7 +567,7 @@ export function HiringApp() {
               </ul>
             </div>
             <div>
-              <h4 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-red-800/60">Gaps</h4>
+              <p className="mb-2 text-sm font-semibold text-ink">Gaps</p>
               <ul className="flex flex-col gap-2">
                 {(c.weaknesses || []).map((w, i) => (
                   <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
@@ -590,14 +580,13 @@ export function HiringApp() {
 
           {/* Email */}
           <div className="mt-10">
-            <h3 className="text-lg font-bold text-ink">Interview request</h3>
             {emailState === "idle" && (
-              <button type="button" onClick={generateEmail} className={`mt-3 px-5 py-2 ${btnPrimary}`}>Generate draft</button>
+              <button type="button" onClick={generateEmail} className={`px-5 py-2 ${btnPrimary}`}>Generate interview email</button>
             )}
-            {emailState === "generating" && <div className="mt-3"><Spinner label="Drafting email…" /></div>}
+            {emailState === "generating" && <Spinner label="Drafting email…" />}
             {emailState === "editing" && (
-              <div className="mt-3">
-                <p className="mb-2 font-ui text-xs text-ink-faint">To: <span className="text-ink-muted">{c.email || "[no email found]"}</span></p>
+              <div>
+                <p className="sr-only">Recipient: {c.email || "address not on file"}</p>
                 <textarea
                   rows={9}
                   className={`${inputClass} mb-3 font-mono text-[13px] leading-relaxed`}
@@ -616,11 +605,7 @@ export function HiringApp() {
 
           {/* Chat */}
           <div className="mt-10">
-            <h3 className="text-lg font-bold text-ink">Ask about this candidate</h3>
-            <div className="mt-3 flex min-h-12 max-h-64 flex-col gap-2 overflow-y-auto">
-              {chat.length === 0 && (
-                <p className="font-ui text-xs italic text-ink-faint">For example: years of experience with a stack, or how they might fit the team.</p>
-              )}
+            <div className="flex min-h-12 max-h-64 flex-col gap-2 overflow-y-auto" aria-label="Chat about candidate">
               {chat.map((m, i) => (
                 <div
                   key={i}
@@ -639,7 +624,7 @@ export function HiringApp() {
             <div className="mt-3 flex gap-2">
               <input
                 className={`flex-1 ${inputClass}`}
-                placeholder="Ask about this candidate…"
+                placeholder="Ask the assistant…"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendChat()}
