@@ -23,6 +23,15 @@ const RECRUITER_LOADING_TIPS = [
   "Tip: Hiring is a forecast. Look for patterns across roles, not one shiny bullet.",
 ];
 
+function buildInterviewMailto(opts: { to?: string; subject: string; body: string }): string {
+  const params = new URLSearchParams();
+  params.set("subject", opts.subject);
+  params.set("body", opts.body);
+  const query = params.toString();
+  const to = opts.to?.trim() ?? "";
+  return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
+}
+
 // ── UI Primitives ─────────────────────────────────────────────────────────────
 function Spinner({ label = "Processing…" }: { label?: string }) {
   return (
@@ -247,6 +256,16 @@ export function HiringApp() {
       setEmailState("idle");
       alert("Failed to generate email.");
     }
+  }
+
+  function openInterviewInMailApp() {
+    const subject = job.title.trim() ? `Interview opportunity: ${job.title.trim()}` : "Interview opportunity";
+    const href = buildInterviewMailto({
+      to: selected?.email,
+      subject,
+      body: emailDraft,
+    });
+    window.location.href = href;
   }
 
   const cutoff = Math.max(1, Math.ceil(candidates.length * (candidates.length <= 10 ? 0.4 : 0.2)));
@@ -588,12 +607,13 @@ export function HiringApp() {
                   onChange={(e) => setEmailDraft(e.target.value)}
                 />
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setEmailState("sent")} className={`px-5 py-2 ${btnPrimary}`}>Send email</button>
+                  <button type="button" onClick={openInterviewInMailApp} className={`px-5 py-2 ${btnPrimary}`}>
+                    Open in email app
+                  </button>
                   <button type="button" onClick={() => setEmailState("idle")} className={`px-4 py-2 ${btnSecondary}`}>Discard</button>
                 </div>
               </div>
             )}
-            {emailState === "sent" && <p className="mt-3 font-ui text-sm text-emerald-800/70">Interview request sent to {c.email || c.name}</p>}
           </div>
 
           {/* Chat */}
