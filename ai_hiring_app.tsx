@@ -27,11 +27,11 @@ const RECRUITER_LOADING_TIPS = [
 function Spinner({ label = "Processing…" }: { label?: string }) {
   return (
     <div className="flex items-start gap-3 font-ui text-sm text-ink-muted">
-      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent/70" viewBox="0 0 24 24" fill="none" aria-hidden>
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
       </svg>
-      <span className="max-w-md text-left leading-snug">{label}</span>
+      <span key={label} className="tip-fade max-w-md text-left leading-snug">{label}</span>
     </div>
   );
 }
@@ -39,13 +39,13 @@ function Spinner({ label = "Processing…" }: { label?: string }) {
 function ScorePill({ score }: { score: number }) {
   const bg =
     score >= 8
-      ? "bg-emerald-100/80 text-emerald-900"
+      ? "bg-emerald-50 text-emerald-800 border-emerald-200/60"
       : score >= 6
-        ? "bg-sky-100/70 text-sky-900"
+        ? "bg-sky-50 text-sky-800 border-sky-200/60"
         : score >= 4
-          ? "bg-amber-100/80 text-amber-900"
-          : "bg-red-100/70 text-red-900";
-  return <span className={`rounded-sm px-2 py-0.5 font-ui text-xs font-semibold tabular-nums ${bg}`}>{score}/10</span>;
+          ? "bg-amber-50 text-amber-800 border-amber-200/60"
+          : "bg-red-50 text-red-800 border-red-200/60";
+  return <span className={`rounded-md border px-2 py-0.5 font-ui text-xs font-semibold tabular-nums ${bg}`}>{score}/10</span>;
 }
 
 function Nav({
@@ -73,16 +73,16 @@ function Nav({
   return (
     <>
       {showLocalApiWarning && (
-        <div className="border-b border-amber-200/80 bg-amber-50 px-4 py-2.5 font-ui text-left text-xs text-amber-950">
+        <div className="border-b border-amber-200/50 bg-amber-50/80 px-4 py-2.5 font-ui text-left text-xs text-amber-900">
           This site is configured to call a <strong>local</strong> API URL. Other devices on the network cannot reach that
-          address. Set <code className="rounded bg-amber-100/80 px-1 font-mono text-[11px]">apiBase</code> in{" "}
-          <code className="rounded bg-amber-100/80 px-1 font-mono text-[11px]">/runtime-config.json</code> on the server
+          address. Set <code className="rounded-md bg-amber-100/60 px-1 font-mono text-[11px]">apiBase</code> in{" "}
+          <code className="rounded-md bg-amber-100/60 px-1 font-mono text-[11px]">/runtime-config.json</code> on the server
           to your public HTTPS API (see docs/TROUBLESHOOTING_MOBILE.md).
         </div>
       )}
-      <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-paper-line bg-paper-card/90 px-5 py-3 backdrop-blur-sm font-ui">
-        <button type="button" className="flex cursor-pointer items-center gap-2.5 text-left" onClick={onHome}>
-          <div className="flex h-8 w-8 items-center justify-center border border-paper-line bg-paper text-sm font-semibold text-accent">
+      <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-paper-line/80 bg-paper-card/90 px-5 py-3 backdrop-blur-sm font-ui">
+        <button type="button" className="flex cursor-pointer items-center gap-2.5 text-left transition-opacity duration-150 hover:opacity-70" onClick={onHome}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-paper-line bg-paper text-sm font-semibold text-accent">
             S
           </div>
           <span className="text-lg font-semibold tracking-tight text-ink">SocketHR</span>
@@ -93,7 +93,7 @@ function Nav({
               A
             </div>
             <span className="hidden text-sm text-ink-muted sm:block">Alex Johnson</span>
-            <button type="button" onClick={onLogout} className="text-xs text-ink-faint transition hover:text-accent">
+            <button type="button" onClick={onLogout} className="rounded-md px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:bg-paper-line/40 hover:text-ink-muted">
               Sign out
             </button>
           </div>
@@ -101,7 +101,7 @@ function Nav({
           <button
             type="button"
             onClick={onLogin}
-            className="border border-paper-line bg-paper-card px-4 py-1.5 text-sm font-medium text-ink transition hover:border-accent/40 hover:text-accent"
+            className="rounded-lg border border-paper-line bg-paper-card px-4 py-1.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:border-accent/30 hover:bg-accent-soft/50 hover:text-accent"
           >
             Log in
           </button>
@@ -146,7 +146,7 @@ export function HiringApp() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [emailDraft, setEmailDraft] = useState("");
-  const [emailState, setEmailState] = useState("idle"); // idle | generating | editing | sent
+  const [emailState, setEmailState] = useState("idle");
   const [dragging, setDragging] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -180,7 +180,6 @@ export function HiringApp() {
     } else setPage(candidates.length ? "results" : "home");
   }
 
-  // ── File handling ─────────────────────────────────────────────────────────
   async function handleFileSelect(
     e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
   ) {
@@ -215,7 +214,6 @@ export function HiringApp() {
     setResumeFiles((prev) => prev.filter((f) => f.name !== name));
   }
 
-  // ── Core analysis ─────────────────────────────────────────────────────────
   async function analyzeResumes() {
     if (!resumeFiles.length) return alert("Please upload at least one resume.");
     setLoading(true);
@@ -236,7 +234,6 @@ export function HiringApp() {
     setLoading(false);
   }
 
-  // ── Chat ──────────────────────────────────────────────────────────────────
   async function sendChat() {
     if (!chatInput.trim() || chatLoading) return;
     const msg = chatInput.trim();
@@ -257,7 +254,6 @@ export function HiringApp() {
     setChatLoading(false);
   }
 
-  // ── Email ─────────────────────────────────────────────────────────────────
   async function generateEmail() {
     setEmailState("generating");
     try {
@@ -274,11 +270,11 @@ export function HiringApp() {
   const topCandidates = candidates.slice(0, cutoff);
 
   const inputClass =
-    "w-full border border-paper-line bg-paper-card px-3 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/70 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/25";
+    "w-full rounded-lg border border-paper-line bg-paper-card px-3 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/60 transition-colors duration-150 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/10";
   const btnPrimary =
-    "bg-accent font-ui text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40";
+    "rounded-lg bg-accent/10 font-ui text-sm font-semibold text-accent transition-all duration-150 hover:bg-accent/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-35";
   const btnSecondary =
-    "border border-paper-line bg-paper-card font-ui text-sm font-medium text-ink-muted transition hover:border-ink-faint/40 hover:text-ink";
+    "rounded-lg border border-paper-line bg-paper-card font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/30 hover:text-ink active:scale-[0.98]";
 
   // ════════════════════════════════════════════════════════════════════════════
   // PAGE: HOME
@@ -289,14 +285,12 @@ export function HiringApp() {
         <Nav
           isLoggedIn={isLoggedIn}
           onLogin={() => setPage("login")}
-          onLogout={() => {
-            setIsLoggedIn(false);
-          }}
+          onLogout={() => { setIsLoggedIn(false); }}
           onHome={() => setPage("home")}
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="flex flex-1 flex-col px-6 py-14 sm:px-10">
+        <div className="fade-in-up flex flex-1 flex-col px-6 py-14 sm:px-10">
           <div className="mx-auto w-full max-w-xl text-left">
             <p className="font-ui text-xs font-medium uppercase tracking-[0.2em] text-ink-faint">Hiring workflow</p>
             <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl">AI-assisted hiring</h1>
@@ -310,17 +304,17 @@ export function HiringApp() {
             >
               Create job listing
             </button>
-            <ul className="mt-14 space-y-4 border-t border-paper-line pt-10 font-ui text-sm text-ink-muted">
+            <ul className="mt-14 space-y-4 border-t border-paper-line/70 pt-10 font-ui text-sm text-ink-muted">
               <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent">1</span>
+                <span className="w-6 shrink-0 font-semibold text-accent/80">1</span>
                 <span>Define the role and what good looks like.</span>
               </li>
               <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent">2</span>
+                <span className="w-6 shrink-0 font-semibold text-accent/80">2</span>
                 <span>Upload résumés (PDF or text).</span>
               </li>
               <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent">3</span>
+                <span className="w-6 shrink-0 font-semibold text-accent/80">3</span>
                 <span>Review rankings, open profiles, draft outreach.</span>
               </li>
             </ul>
@@ -343,8 +337,8 @@ export function HiringApp() {
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="flex flex-1 items-start justify-center px-4 py-12 sm:py-16">
-          <div className="w-full max-w-sm border border-paper-line bg-paper-card p-8">
+        <div className="fade-in-up flex flex-1 items-start justify-center px-4 py-12 sm:py-16">
+          <div className="w-full max-w-sm rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
             <h2 className="text-2xl font-semibold text-ink">Sign in</h2>
             <p className="mt-1 font-ui text-sm text-ink-muted">Access all candidates and profiles</p>
             <div className="mt-6 flex flex-col gap-3">
@@ -354,9 +348,9 @@ export function HiringApp() {
                 Sign in
               </button>
               <div className="relative my-1 flex items-center">
-                <div className="flex-1 border-t border-paper-line" />
+                <div className="flex-1 border-t border-paper-line/60" />
                 <span className="mx-3 font-ui text-xs text-ink-faint">or</span>
-                <div className="flex-1 border-t border-paper-line" />
+                <div className="flex-1 border-t border-paper-line/60" />
               </div>
               <button type="button" onClick={handleLogin} className={`py-2.5 ${btnSecondary}`}>
                 Continue with demo account
@@ -365,7 +359,7 @@ export function HiringApp() {
             <button
               type="button"
               onClick={() => setPage(candidates.length ? "results" : "home")}
-              className="mt-6 w-full text-left font-ui text-xs text-ink-faint transition hover:text-ink-muted"
+              className="mt-6 w-full rounded-md px-2 py-1 text-left font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
             >
               ← Back
             </button>
@@ -388,10 +382,10 @@ export function HiringApp() {
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="flex flex-1 justify-center px-4 py-10">
-          <div className="w-full max-w-xl border border-paper-line bg-paper-card p-8">
+        <div className="fade-in-up flex flex-1 justify-center px-4 py-10">
+          <div className="w-full max-w-xl rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
             <div className="mb-6 flex items-start gap-3 text-left">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-paper-line bg-paper font-ui text-sm font-semibold text-accent">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
                 1
               </div>
               <div>
@@ -402,7 +396,7 @@ export function HiringApp() {
             <div className="flex flex-col gap-4">
               <div>
                 <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Job title <span className="text-accent">*</span>
+                  Job title <span className="text-accent/70">*</span>
                 </label>
                 <input
                   className={inputClass}
@@ -413,7 +407,7 @@ export function HiringApp() {
               </div>
               <div>
                 <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Job description <span className="text-accent">*</span>
+                  Job description <span className="text-accent/70">*</span>
                 </label>
                 <textarea
                   rows={4}
@@ -425,7 +419,7 @@ export function HiringApp() {
               </div>
               <div>
                 <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Requirements <span className="text-accent">*</span>
+                  Requirements <span className="text-accent/70">*</span>
                 </label>
                 <textarea
                   rows={3}
@@ -485,10 +479,10 @@ export function HiringApp() {
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="flex flex-1 justify-center px-4 py-10">
-          <div className="w-full max-w-2xl border border-paper-line bg-paper-card p-8">
+        <div className="fade-in-up flex flex-1 justify-center px-4 py-10">
+          <div className="w-full max-w-2xl rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
             <div className="mb-2 flex items-start gap-3 text-left">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-paper-line bg-paper font-ui text-sm font-semibold text-accent">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
                 2
               </div>
               <div>
@@ -498,28 +492,20 @@ export function HiringApp() {
             </div>
 
             <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`mt-5 flex cursor-pointer flex-col items-center border-2 border-dashed p-10 transition ${
-                dragging ? "border-accent/50 bg-accent-soft/40" : "border-paper-line hover:border-ink-faint/30 hover:bg-paper/80"
+              className={`mt-5 flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed p-10 transition-all duration-200 ${
+                dragging ? "border-accent/40 bg-accent-soft/30" : "border-paper-line hover:border-ink-faint/25 hover:bg-paper/60"
               }`}
             >
-              <svg className="mb-3 h-10 w-10 text-ink-faint/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
+              <svg className="mb-3 h-10 w-10 text-ink-faint/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
               <p className="font-ui text-sm font-medium text-ink">Drag and drop files here</p>
               <p className="mt-1 font-ui text-xs text-ink-faint">or click to browse — PDF, TXT supported</p>
-              <span className={`mt-4 px-4 py-2 font-ui text-xs font-semibold text-white ${btnPrimary}`}>Browse files</span>
+              <span className={`mt-4 px-4 py-2 ${btnPrimary}`}>Browse files</span>
               <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
             </div>
 
@@ -529,23 +515,17 @@ export function HiringApp() {
                   {resumeFiles.length} file{resumeFiles.length !== 1 ? "s" : ""} queued
                 </p>
                 {resumeFiles.map((f) => (
-                  <div
-                    key={f.name}
-                    className="flex items-center justify-between border border-paper-line bg-paper px-4 py-2.5"
-                  >
+                  <div key={f.name} className="flex items-center justify-between rounded-lg border border-paper-line/80 bg-paper px-4 py-2.5 transition-colors duration-150">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-paper-line bg-paper-card font-ui text-[10px] font-bold text-accent">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-paper-line bg-paper-card font-ui text-[10px] font-bold text-accent/70">
                         PDF
                       </div>
                       <span className="truncate font-ui text-sm text-ink">{f.name}</span>
                     </div>
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFile(f.name);
-                      }}
-                      className="ml-3 shrink-0 font-ui text-xs text-ink-faint transition hover:text-accent"
+                      onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                      className="ml-3 shrink-0 rounded-md px-2 py-1 font-ui text-xs text-ink-faint transition-colors duration-150 hover:bg-paper-line/30 hover:text-ink-muted"
                     >
                       Remove
                     </button>
@@ -568,7 +548,7 @@ export function HiringApp() {
               </button>
             </div>
             {loading && (
-              <div className="mt-5 border-t border-paper-line pt-5">
+              <div className="mt-5 border-t border-paper-line/60 pt-5">
                 <Spinner label={RECRUITER_LOADING_TIPS[loadingTipIndex]} />
               </div>
             )}
@@ -592,7 +572,7 @@ export function HiringApp() {
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="mx-auto w-full max-w-3xl px-4 py-8 text-left">
+        <div className="fade-in-up mx-auto w-full max-w-3xl px-4 py-8 text-left">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-ink">{job.title}</h2>
@@ -602,21 +582,19 @@ export function HiringApp() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                setPage("upload");
-              }}
-              className="shrink-0 font-ui text-xs text-accent transition hover:text-accent-hover"
+              onClick={() => { setPage("upload"); }}
+              className="shrink-0 rounded-md px-2 py-1 font-ui text-xs text-accent transition-colors duration-150 hover:bg-accent-soft/50 hover:text-accent-hover"
             >
               + Add more résumés
             </button>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="border border-paper-line bg-paper px-2.5 py-1 font-ui text-xs font-medium text-ink-muted">
+            <span className="rounded-md border border-paper-line/80 bg-paper px-2.5 py-1 font-ui text-xs font-medium text-ink-muted">
               Top {Math.round((cutoff / candidates.length) * 100)}% highlighted
             </span>
             {!isLoggedIn && (
-              <span className="border border-paper-line bg-paper-card px-2.5 py-1 font-ui text-xs text-ink-faint">
+              <span className="rounded-md border border-paper-line/80 bg-paper-card px-2.5 py-1 font-ui text-xs text-ink-faint">
                 Sign in to view all profiles
               </span>
             )}
@@ -630,13 +608,7 @@ export function HiringApp() {
                 c={c}
                 rank={i + 1}
                 isTop
-                onClick={() => {
-                  setSelected(c);
-                  setChat([]);
-                  setEmailState("idle");
-                  setEmailDraft("");
-                  setPage("profile");
-                }}
+                onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }}
               />
             ))}
           </div>
@@ -650,13 +622,7 @@ export function HiringApp() {
                     key={c.id ?? cutoff + i}
                     c={c}
                     rank={cutoff + i + 1}
-                    onClick={() => {
-                      setSelected(c);
-                      setChat([]);
-                      setEmailState("idle");
-                      setEmailDraft("");
-                      setPage("profile");
-                    }}
+                    onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }}
                   />
                 ))}
               </div>
@@ -664,7 +630,7 @@ export function HiringApp() {
           )}
 
           {!isLoggedIn && candidates.length > cutoff && (
-            <div className="border border-dashed border-paper-line bg-paper-card p-7 text-left">
+            <div className="rounded-xl border border-dashed border-paper-line bg-paper-card p-7 text-left">
               <p className="text-lg font-semibold text-ink">View all {candidates.length} candidates</p>
               <p className="mt-2 font-ui text-sm text-ink-muted">
                 Sign in to unlock full rankings, detailed profiles, AI chat, and email tools.
@@ -698,11 +664,11 @@ export function HiringApp() {
           apiBase={apiBase}
           apiConfigLoaded={apiConfigLoaded}
         />
-        <div className="mx-auto w-full max-w-2xl px-4 py-6 text-left">
+        <div className="fade-in-up mx-auto w-full max-w-2xl px-4 py-6 text-left">
           <button
             type="button"
             onClick={() => setPage("results")}
-            className="mb-4 flex items-center gap-1 font-ui text-sm text-accent transition hover:text-accent-hover"
+            className="mb-4 flex items-center gap-1 rounded-md px-2 py-1 font-ui text-sm text-accent transition-colors duration-150 hover:bg-accent-soft/50 hover:text-accent-hover"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -710,10 +676,10 @@ export function HiringApp() {
             Back to results
           </button>
 
-          <div className="mb-4 border border-paper-line bg-paper-card p-6">
+          <div className="mb-4 rounded-xl border border-paper-line/80 bg-paper-card p-6 shadow-sm shadow-paper-line/30">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center border border-paper-line bg-paper text-xl font-semibold text-accent">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-paper-line bg-paper text-xl font-semibold text-accent/80">
                   {c.name?.[0]?.toUpperCase() || "?"}
                 </div>
                 <div>
@@ -727,7 +693,7 @@ export function HiringApp() {
               </div>
               <ScorePill score={c.score ?? 0} />
             </div>
-            <p className="mt-4 border-t border-paper-line pt-4 text-sm italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
+            <p className="mt-4 border-t border-paper-line/60 pt-4 text-sm italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
             {c.score_rationale && (
               <p className="mt-2 font-ui text-xs text-ink-faint">Score rationale: {c.score_rationale}</p>
             )}
@@ -735,7 +701,7 @@ export function HiringApp() {
             {c.skills && c.skills.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {c.skills.map((s) => (
-                  <span key={s} className="border border-paper-line bg-paper px-2 py-0.5 font-ui text-xs text-ink-muted">
+                  <span key={s} className="rounded-md border border-paper-line/80 bg-paper px-2 py-0.5 font-ui text-xs text-ink-muted">
                     {s}
                   </span>
                 ))}
@@ -744,23 +710,23 @@ export function HiringApp() {
           </div>
 
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="border border-paper-line bg-paper-card p-4">
-              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-emerald-800">Strengths</h4>
+            <div className="rounded-xl border border-paper-line/80 bg-paper-card p-4 shadow-sm shadow-paper-line/30">
+              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-emerald-800/80">Strengths</h4>
               <ul className="flex flex-col gap-2">
                 {(c.strengths || []).map((s, i) => (
                   <li key={i} className="flex gap-2 text-sm text-ink-muted">
-                    <span className="mt-0.5 shrink-0 text-emerald-700">•</span>
+                    <span className="mt-0.5 shrink-0 text-emerald-600/60">•</span>
                     {s}
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="border border-paper-line bg-paper-card p-4">
-              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-red-800/90">Gaps</h4>
+            <div className="rounded-xl border border-paper-line/80 bg-paper-card p-4 shadow-sm shadow-paper-line/30">
+              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-red-800/70">Gaps</h4>
               <ul className="flex flex-col gap-2">
                 {(c.weaknesses || []).map((w, i) => (
                   <li key={i} className="flex gap-2 text-sm text-ink-muted">
-                    <span className="mt-0.5 shrink-0 text-red-600/70">•</span>
+                    <span className="mt-0.5 shrink-0 text-red-500/50">•</span>
                     {w}
                   </li>
                 ))}
@@ -768,7 +734,7 @@ export function HiringApp() {
             </div>
           </div>
 
-          <div className="mb-4 border border-paper-line bg-paper-card p-5">
+          <div className="mb-4 rounded-xl border border-paper-line/80 bg-paper-card p-5 shadow-sm shadow-paper-line/30">
             <h3 className="mb-3 font-semibold text-ink">Interview request email</h3>
             {emailState === "idle" && (
               <button type="button" onClick={generateEmail} className={`px-5 py-2 ${btnPrimary}`}>
@@ -798,11 +764,11 @@ export function HiringApp() {
               </div>
             )}
             {emailState === "sent" && (
-              <p className="font-ui text-sm font-medium text-emerald-800">Interview request sent to {c.email || c.name}</p>
+              <p className="font-ui text-sm font-medium text-emerald-800/80">Interview request sent to {c.email || c.name}</p>
             )}
           </div>
 
-          <div className="border border-paper-line bg-paper-card p-5">
+          <div className="rounded-xl border border-paper-line/80 bg-paper-card p-5 shadow-sm shadow-paper-line/30">
             <h3 className="mb-3 font-semibold text-ink">Ask about this candidate</h3>
             <div className="mb-3 flex min-h-16 max-h-64 flex-col gap-2 overflow-y-auto">
               {chat.length === 0 && (
@@ -813,8 +779,10 @@ export function HiringApp() {
               {chat.map((m, i) => (
                 <div
                   key={i}
-                  className={`max-w-[85%] rounded-sm px-3 py-2 text-sm ${
-                    m.role === "user" ? "self-end bg-accent text-white" : "self-start border border-paper-line bg-paper text-ink-muted"
+                  className={`max-w-[85%] px-3 py-2 text-sm transition-opacity duration-200 ${
+                    m.role === "user"
+                      ? "self-end rounded-xl rounded-br-sm bg-accent/10 text-accent"
+                      : "self-start rounded-xl rounded-bl-sm border border-paper-line/80 bg-paper text-ink-muted"
                   }`}
                 >
                   {m.content}
@@ -876,13 +844,13 @@ function CandidateRow({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full cursor-pointer items-center justify-between border px-4 py-3.5 text-left transition hover:border-accent/35 ${
-        isTop ? "border-paper-line bg-paper-card" : "border-paper-line bg-paper-card/80"
+      className={`group flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3.5 text-left transition-all duration-150 hover:border-accent/25 hover:shadow-sm hover:shadow-accent/5 active:scale-[0.995] ${
+        isTop ? "border-paper-line/80 bg-paper-card" : "border-paper-line/60 bg-paper-card/80"
       }`}
     >
       <div className="flex min-w-0 items-center gap-3">
         <span className="w-6 shrink-0 text-center font-ui text-xs font-semibold text-ink-faint">#{rank}</span>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-paper-line bg-paper font-ui text-sm font-semibold text-accent">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
           {c.name?.[0]?.toUpperCase() || "?"}
         </div>
         <div className="min-w-0">
@@ -893,7 +861,7 @@ function CandidateRow({
       <div className="ml-3 flex shrink-0 items-center gap-3">
         <ScorePill score={c.score ?? 0} />
         <svg
-          className="h-4 w-4 text-ink-faint/50 transition group-hover:text-accent"
+          className="h-4 w-4 text-ink-faint/40 transition-colors duration-150 group-hover:text-accent/60"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
