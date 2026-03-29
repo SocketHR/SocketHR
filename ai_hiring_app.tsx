@@ -27,7 +27,7 @@ const RECRUITER_LOADING_TIPS = [
 function Spinner({ label = "Processing…" }: { label?: string }) {
   return (
     <div className="flex items-start gap-3 font-ui text-sm text-ink-muted">
-      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent/70" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent/60" viewBox="0 0 24 24" fill="none" aria-hidden>
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
       </svg>
@@ -37,15 +37,15 @@ function Spinner({ label = "Processing…" }: { label?: string }) {
 }
 
 function ScorePill({ score }: { score: number }) {
-  const bg =
+  const style =
     score >= 8
-      ? "bg-emerald-50 text-emerald-800 border-emerald-200/60"
+      ? "bg-emerald-50/80 text-emerald-800"
       : score >= 6
-        ? "bg-sky-50 text-sky-800 border-sky-200/60"
+        ? "bg-sky-50/80 text-sky-800"
         : score >= 4
-          ? "bg-amber-50 text-amber-800 border-amber-200/60"
-          : "bg-red-50 text-red-800 border-red-200/60";
-  return <span className={`rounded-md border px-2 py-0.5 font-ui text-xs font-semibold tabular-nums ${bg}`}>{score}/10</span>;
+          ? "bg-amber-50/80 text-amber-800"
+          : "bg-red-50/80 text-red-800";
+  return <span className={`rounded-full px-2.5 py-0.5 font-ui text-xs font-semibold tabular-nums ${style}`}>{score}/10</span>;
 }
 
 function Nav({
@@ -73,27 +73,21 @@ function Nav({
   return (
     <>
       {showLocalApiWarning && (
-        <div className="border-b border-amber-200/50 bg-amber-50/80 px-4 py-2.5 font-ui text-left text-xs text-amber-900">
-          This site is configured to call a <strong>local</strong> API URL. Other devices on the network cannot reach that
-          address. Set <code className="rounded-md bg-amber-100/60 px-1 font-mono text-[11px]">apiBase</code> in{" "}
-          <code className="rounded-md bg-amber-100/60 px-1 font-mono text-[11px]">/runtime-config.json</code> on the server
-          to your public HTTPS API (see docs/TROUBLESHOOTING_MOBILE.md).
+        <div className="bg-amber-50/60 px-6 py-2.5 font-ui text-left text-xs text-amber-900/80 sm:px-10">
+          This site is configured to call a <strong>local</strong> API URL. Other devices cannot reach it.
+          Set <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">apiBase</code> in{" "}
+          <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">/runtime-config.json</code> to your public
+          HTTPS API.
         </div>
       )}
-      <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-paper-line/80 bg-paper-card/90 px-5 py-3 backdrop-blur-sm font-ui">
-        <button type="button" className="flex cursor-pointer items-center gap-2.5 text-left transition-opacity duration-150 hover:opacity-70" onClick={onHome}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-paper-line bg-paper text-sm font-semibold text-accent">
-            S
-          </div>
-          <span className="text-lg font-semibold tracking-tight text-ink">SocketHR</span>
+      <nav className="sticky top-0 z-10 flex items-center justify-between bg-paper/90 px-6 py-4 backdrop-blur-sm font-ui sm:px-10">
+        <button type="button" className="flex cursor-pointer items-center gap-2 text-left transition-opacity duration-150 hover:opacity-60" onClick={onHome}>
+          <span className="text-lg font-bold tracking-tight text-ink">SocketHR</span>
         </button>
         {isLoggedIn ? (
           <div className="flex items-center gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-paper-line bg-paper text-xs font-semibold text-accent">
-              A
-            </div>
             <span className="hidden text-sm text-ink-muted sm:block">Alex Johnson</span>
-            <button type="button" onClick={onLogout} className="rounded-md px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:bg-paper-line/40 hover:text-ink-muted">
+            <button type="button" onClick={onLogout} className="rounded-lg px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted">
               Sign out
             </button>
           </div>
@@ -101,7 +95,7 @@ function Nav({
           <button
             type="button"
             onClick={onLogin}
-            className="rounded-lg border border-paper-line bg-paper-card px-4 py-1.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:border-accent/30 hover:bg-accent-soft/50 hover:text-accent"
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-faint transition-all duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
           >
             Log in
           </button>
@@ -164,20 +158,15 @@ export function HiringApp() {
   }, [loading]);
 
   function requireLogin(nav: () => void) {
-    if (isLoggedIn) {
-      nav();
-      return;
-    }
+    if (isLoggedIn) { nav(); return; }
     setPendingNav(() => nav);
     setPage("login");
   }
 
   function handleLogin() {
     setIsLoggedIn(true);
-    if (pendingNav) {
-      pendingNav();
-      setPendingNav(null);
-    } else setPage(candidates.length ? "results" : "home");
+    if (pendingNav) { pendingNav(); setPendingNav(null); }
+    else setPage(candidates.length ? "results" : "home");
   }
 
   async function handleFileSelect(
@@ -201,10 +190,7 @@ export function HiringApp() {
   function readFileAsBase64(file: File) {
     return new Promise<string>((res, rej) => {
       const r = new FileReader();
-      r.onload = () => {
-        const url = r.result as string;
-        res(url.split(",")[1]);
-      };
+      r.onload = () => { res((r.result as string).split(",")[1]); };
       r.onerror = () => rej(new Error("Read failed"));
       r.readAsDataURL(file);
     });
@@ -218,13 +204,11 @@ export function HiringApp() {
     if (!resumeFiles.length) return alert("Please upload at least one resume.");
     setLoading(true);
     setCandidates([]);
-
     try {
       const { candidates: merged } = await postJson("/api/analyze", {
         job,
         resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
       });
-
       setCandidates(merged);
       setPage("results");
     } catch (err) {
@@ -243,8 +227,7 @@ export function HiringApp() {
     setChatLoading(true);
     try {
       const { reply } = await postJson("/api/chat", {
-        job,
-        selected,
+        job, selected,
         messages: newChat.map((m) => ({ role: m.role, content: m.content })),
       });
       setChat([...newChat, { role: "assistant", content: reply }]);
@@ -270,55 +253,45 @@ export function HiringApp() {
   const topCandidates = candidates.slice(0, cutoff);
 
   const inputClass =
-    "w-full rounded-lg border border-paper-line bg-paper-card px-3 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/60 transition-colors duration-150 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/10";
+    "w-full rounded-lg bg-paper-line/20 px-3.5 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/50 transition-colors duration-150 focus:bg-paper-line/30 focus:outline-none";
   const btnPrimary =
-    "rounded-lg bg-accent/10 font-ui text-sm font-semibold text-accent transition-all duration-150 hover:bg-accent/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-35";
+    "rounded-lg bg-accent/10 font-ui text-sm font-semibold text-accent transition-all duration-150 hover:bg-accent/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30";
   const btnSecondary =
-    "rounded-lg border border-paper-line bg-paper-card font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/30 hover:text-ink active:scale-[0.98]";
+    "rounded-lg bg-paper-line/20 font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/35 hover:text-ink active:scale-[0.98]";
+
+  const shell = "hiring-shell flex flex-col";
+  const content = "fade-in-up w-full max-w-2xl px-6 py-10 text-left sm:px-10";
 
   // ════════════════════════════════════════════════════════════════════════════
   // PAGE: HOME
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "home")
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => setPage("login")}
-          onLogout={() => { setIsLoggedIn(false); }}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up flex flex-1 flex-col px-6 py-14 sm:px-10">
-          <div className="mx-auto w-full max-w-xl text-left">
-            <p className="font-ui text-xs font-medium uppercase tracking-[0.2em] text-ink-faint">Hiring workflow</p>
-            <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl">AI-assisted hiring</h1>
-            <p className="mt-4 max-w-lg text-lg leading-relaxed text-ink-muted">
-              Add resumes, get ranked candidates with scores and short summaries — then dig in with interview tools.
-            </p>
-            <button
-              type="button"
-              onClick={() => setPage("job")}
-              className={`mt-10 px-8 py-3.5 ${btnPrimary}`}
-            >
-              Create job listing
-            </button>
-            <ul className="mt-14 space-y-4 border-t border-paper-line/70 pt-10 font-ui text-sm text-ink-muted">
-              <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent/80">1</span>
-                <span>Define the role and what good looks like.</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent/80">2</span>
-                <span>Upload résumés (PDF or text).</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="w-6 shrink-0 font-semibold text-accent/80">3</span>
-                <span>Review rankings, open profiles, draft outreach.</span>
-              </li>
-            </ul>
-          </div>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <p className="font-ui text-xs font-medium uppercase tracking-[0.2em] text-ink-faint">Hiring workflow</p>
+          <h1 className="mt-4 text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
+          <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
+            Add resumes, get ranked candidates with scores and summaries — then dig in with interview tools.
+          </p>
+          <button type="button" onClick={() => setPage("job")} className={`mt-10 px-7 py-3 ${btnPrimary}`}>
+            Create job listing
+          </button>
+          <ul className="mt-16 space-y-3 font-ui text-sm text-ink-muted">
+            <li className="flex gap-3">
+              <span className="w-5 shrink-0 font-semibold text-accent/70">1</span>
+              Define the role and what good looks like.
+            </li>
+            <li className="flex gap-3">
+              <span className="w-5 shrink-0 font-semibold text-accent/70">2</span>
+              Upload résumés (PDF or text).
+            </li>
+            <li className="flex gap-3">
+              <span className="w-5 shrink-0 font-semibold text-accent/70">3</span>
+              Review rankings, open profiles, draft outreach.
+            </li>
+          </ul>
         </div>
       </div>
     );
@@ -328,42 +301,29 @@ export function HiringApp() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "login")
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => {}}
-          onLogout={() => setIsLoggedIn(false)}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up flex flex-1 items-start justify-center px-4 py-12 sm:py-16">
-          <div className="w-full max-w-sm rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
-            <h2 className="text-2xl font-semibold text-ink">Sign in</h2>
-            <p className="mt-1 font-ui text-sm text-ink-muted">Access all candidates and profiles</p>
-            <div className="mt-6 flex flex-col gap-3">
-              <input className={inputClass} placeholder="Email address" />
-              <input className={inputClass} type="password" placeholder="Password" />
-              <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>
-                Sign in
-              </button>
-              <div className="relative my-1 flex items-center">
-                <div className="flex-1 border-t border-paper-line/60" />
-                <span className="mx-3 font-ui text-xs text-ink-faint">or</span>
-                <div className="flex-1 border-t border-paper-line/60" />
-              </div>
-              <button type="button" onClick={handleLogin} className={`py-2.5 ${btnSecondary}`}>
-                Continue with demo account
-              </button>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => {}} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content} style={{ maxWidth: "24rem" }}>
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
+          <p className="mt-2 font-ui text-sm text-ink-muted">Access all candidates and profiles</p>
+          <div className="mt-8 flex flex-col gap-3">
+            <input className={inputClass} placeholder="Email address" />
+            <input className={inputClass} type="password" placeholder="Password" />
+            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Sign in</button>
+            <div className="my-1 flex items-center gap-3">
+              <div className="h-px flex-1 bg-paper-line/50" />
+              <span className="font-ui text-xs text-ink-faint">or</span>
+              <div className="h-px flex-1 bg-paper-line/50" />
             </div>
-            <button
-              type="button"
-              onClick={() => setPage(candidates.length ? "results" : "home")}
-              className="mt-6 w-full rounded-md px-2 py-1 text-left font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
-            >
-              ← Back
-            </button>
+            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnSecondary}`}>Continue with demo account</button>
           </div>
+          <button
+            type="button"
+            onClick={() => setPage(candidates.length ? "results" : "home")}
+            className="mt-8 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
+          >
+            ← Back
+          </button>
         </div>
       </div>
     );
@@ -373,81 +333,36 @@ export function HiringApp() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "job")
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => setPage("login")}
-          onLogout={() => setIsLoggedIn(false)}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up flex flex-1 justify-center px-4 py-10">
-          <div className="w-full max-w-xl rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
-            <div className="mb-6 flex items-start gap-3 text-left">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
-                1
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-ink">Create job listing</h2>
-                <p className="mt-0.5 font-ui text-xs text-ink-faint">Step 1 of 2</p>
-              </div>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <p className="font-ui text-xs text-ink-faint">Step 1 of 2</p>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
+          <div className="mt-8 flex flex-col gap-5">
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job title <span className="text-accent/60">*</span></label>
+              <input className={inputClass} placeholder="e.g. Senior Software Engineer" value={job.title} onChange={(e) => setJob({ ...job, title: e.target.value })} />
             </div>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Job title <span className="text-accent/70">*</span>
-                </label>
-                <input
-                  className={inputClass}
-                  placeholder="e.g. Senior Software Engineer"
-                  value={job.title}
-                  onChange={(e) => setJob({ ...job, title: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Job description <span className="text-accent/70">*</span>
-                </label>
-                <textarea
-                  rows={4}
-                  className={`${inputClass} resize-none`}
-                  placeholder="Describe the role, key responsibilities, day-to-day…"
-                  value={job.description}
-                  onChange={(e) => setJob({ ...job, description: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">
-                  Requirements <span className="text-accent/70">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  className={`${inputClass} resize-none`}
-                  placeholder="Required skills, years of experience, education, certifications…"
-                  value={job.requirements}
-                  onChange={(e) => setJob({ ...job, requirements: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block font-ui text-sm font-medium text-ink-muted">Company culture and fit</label>
-                <textarea
-                  rows={2}
-                  className={`${inputClass} resize-none`}
-                  placeholder="Values, team vibe, ideal personality traits, working style…"
-                  value={job.culture}
-                  onChange={(e) => setJob({ ...job, culture: e.target.value })}
-                />
-              </div>
-              <button
-                type="button"
-                disabled={!job.title || !job.description || !job.requirements}
-                onClick={() => setPage("upload")}
-                className={`mt-2 py-3 ${btnPrimary}`}
-              >
-                Next: upload résumés
-              </button>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job description <span className="text-accent/60">*</span></label>
+              <textarea rows={4} className={`${inputClass} resize-none`} placeholder="Describe the role, key responsibilities, day-to-day…" value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
             </div>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Requirements <span className="text-accent/60">*</span></label>
+              <textarea rows={3} className={`${inputClass} resize-none`} placeholder="Required skills, years of experience, education, certifications…" value={job.requirements} onChange={(e) => setJob({ ...job, requirements: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Company culture and fit</label>
+              <textarea rows={2} className={`${inputClass} resize-none`} placeholder="Values, team vibe, ideal personality traits, working style…" value={job.culture} onChange={(e) => setJob({ ...job, culture: e.target.value })} />
+            </div>
+            <button
+              type="button"
+              disabled={!job.title || !job.description || !job.requirements}
+              onClick={() => setPage("upload")}
+              className={`mt-1 py-3 ${btnPrimary}`}
+            >
+              Next: upload résumés
+            </button>
           </div>
         </div>
       </div>
@@ -461,98 +376,70 @@ export function HiringApp() {
       e.preventDefault();
       setDragging(false);
       const files = Array.from(e.dataTransfer.files).filter(
-        (f: File) =>
-          f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx")
+        (f: File) => f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx")
       );
       if (!files.length) return alert("Please drop PDF or text files.");
-      const synth = { target: { files, value: "" } };
-      handleFileSelect(synth);
+      handleFileSelect({ target: { files, value: "" } });
     }
 
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => setPage("login")}
-          onLogout={() => setIsLoggedIn(false)}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up flex flex-1 justify-center px-4 py-10">
-          <div className="w-full max-w-2xl rounded-xl border border-paper-line/80 bg-paper-card p-8 shadow-sm shadow-paper-line/30">
-            <div className="mb-2 flex items-start gap-3 text-left">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
-                2
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-ink">Upload résumés</h2>
-                <p className="mt-0.5 font-ui text-xs text-ink-faint">Step 2 of 2 — PDF or text files</p>
-              </div>
-            </div>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <p className="font-ui text-xs text-ink-faint">Step 2 of 2</p>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
+          <p className="mt-2 font-ui text-sm text-ink-muted">PDF or text files</p>
 
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`mt-5 flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed p-10 transition-all duration-200 ${
-                dragging ? "border-accent/40 bg-accent-soft/30" : "border-paper-line hover:border-ink-faint/25 hover:bg-paper/60"
-              }`}
-            >
-              <svg className="mb-3 h-10 w-10 text-ink-faint/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <p className="font-ui text-sm font-medium text-ink">Drag and drop files here</p>
-              <p className="mt-1 font-ui text-xs text-ink-faint">or click to browse — PDF, TXT supported</p>
-              <span className={`mt-4 px-4 py-2 ${btnPrimary}`}>Browse files</span>
-              <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
-            </div>
-
-            {resumeFiles.length > 0 && (
-              <div className="mt-4 flex max-h-52 flex-col gap-2 overflow-y-auto">
-                <p className="font-ui text-xs font-medium uppercase tracking-wider text-ink-faint">
-                  {resumeFiles.length} file{resumeFiles.length !== 1 ? "s" : ""} queued
-                </p>
-                {resumeFiles.map((f) => (
-                  <div key={f.name} className="flex items-center justify-between rounded-lg border border-paper-line/80 bg-paper px-4 py-2.5 transition-colors duration-150">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-paper-line bg-paper-card font-ui text-[10px] font-bold text-accent/70">
-                        PDF
-                      </div>
-                      <span className="truncate font-ui text-sm text-ink">{f.name}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
-                      className="ml-3 shrink-0 rounded-md px-2 py-1 font-ui text-xs text-ink-faint transition-colors duration-150 hover:bg-paper-line/30 hover:text-ink-muted"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-5 flex gap-3">
-              <button type="button" onClick={() => setPage("job")} className={`flex-1 py-2.5 ${btnSecondary}`}>
-                ← Back
-              </button>
-              <button
-                type="button"
-                disabled={loading || !resumeFiles.length}
-                onClick={analyzeResumes}
-                className={`flex-1 py-2.5 ${btnPrimary}`}
-              >
-                {loading ? "Analyzing…" : `Analyze ${resumeFiles.length} résumé(s)`}
-              </button>
-            </div>
-            {loading && (
-              <div className="mt-5 border-t border-paper-line/60 pt-5">
-                <Spinner label={RECRUITER_LOADING_TIPS[loadingTipIndex]} />
-              </div>
-            )}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`mt-8 flex cursor-pointer flex-col items-center rounded-xl py-14 transition-all duration-200 ${
+              dragging ? "bg-accent-soft/30" : "bg-paper-line/15 hover:bg-paper-line/25"
+            }`}
+          >
+            <svg className="mb-3 h-8 w-8 text-ink-faint/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="font-ui text-sm text-ink-muted">Drag and drop files here, or click to browse</p>
+            <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
           </div>
+
+          {resumeFiles.length > 0 && (
+            <div className="mt-6 flex max-h-52 flex-col gap-1 overflow-y-auto">
+              <p className="mb-1 font-ui text-xs font-medium uppercase tracking-wider text-ink-faint">
+                {resumeFiles.length} file{resumeFiles.length !== 1 ? "s" : ""} queued
+              </p>
+              {resumeFiles.map((f) => (
+                <div key={f.name} className="flex items-center justify-between rounded-lg py-2 transition-colors duration-150 hover:bg-paper-line/15">
+                  <div className="flex min-w-0 items-center gap-3 pl-1">
+                    <span className="font-ui text-[10px] font-bold uppercase text-ink-faint/60">PDF</span>
+                    <span className="truncate font-ui text-sm text-ink">{f.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                    className="ml-3 shrink-0 rounded-md px-2 py-1 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-8 flex gap-3">
+            <button type="button" onClick={() => setPage("job")} className={`flex-1 py-2.5 ${btnSecondary}`}>← Back</button>
+            <button type="button" disabled={loading || !resumeFiles.length} onClick={analyzeResumes} className={`flex-1 py-2.5 ${btnPrimary}`}>
+              {loading ? "Analyzing…" : `Analyze ${resumeFiles.length} résumé(s)`}
+            </button>
+          </div>
+          {loading && (
+            <div className="mt-6">
+              <Spinner label={RECRUITER_LOADING_TIPS[loadingTipIndex]} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -563,83 +450,45 @@ export function HiringApp() {
   // ════════════════════════════════════════════════════════════════════════════
   if (page === "results") {
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => setPage("login")}
-          onLogout={() => setIsLoggedIn(false)}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up mx-auto w-full max-w-3xl px-4 py-8 text-left">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-ink">{job.title}</h2>
-              <p className="mt-0.5 font-ui text-sm text-ink-faint">
-                {candidates.length} candidate{candidates.length !== 1 ? "s" : ""} analyzed
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setPage("upload"); }}
-              className="shrink-0 rounded-md px-2 py-1 font-ui text-xs text-accent transition-colors duration-150 hover:bg-accent-soft/50 hover:text-accent-hover"
-            >
-              + Add more résumés
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className="fade-in-up w-full max-w-3xl px-6 py-10 text-left sm:px-10">
+          <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
+          <div className="mt-1 flex items-baseline gap-4">
+            <p className="font-ui text-sm text-ink-faint">{candidates.length} candidate{candidates.length !== 1 ? "s" : ""} analyzed</p>
+            <button type="button" onClick={() => setPage("upload")} className="font-ui text-xs text-accent/80 transition-colors duration-150 hover:text-accent">
+              + Add more
             </button>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-md border border-paper-line/80 bg-paper px-2.5 py-1 font-ui text-xs font-medium text-ink-muted">
-              Top {Math.round((cutoff / candidates.length) * 100)}% highlighted
-            </span>
-            {!isLoggedIn && (
-              <span className="rounded-md border border-paper-line/80 bg-paper-card px-2.5 py-1 font-ui text-xs text-ink-faint">
-                Sign in to view all profiles
-              </span>
-            )}
+          <div className="mt-3 flex flex-wrap gap-2 font-ui text-xs text-ink-faint">
+            <span className="rounded-full bg-paper-line/20 px-2.5 py-1">Top {Math.round((cutoff / candidates.length) * 100)}% highlighted</span>
+            {!isLoggedIn && <span className="rounded-full bg-paper-line/20 px-2.5 py-1">Sign in to view all</span>}
           </div>
 
-          <h3 className="mb-3 mt-8 font-ui text-xs font-semibold uppercase tracking-widest text-ink-faint">Top candidates</h3>
-          <div className="mb-6 flex flex-col gap-2">
+          <h3 className="mb-3 mt-10 font-ui text-[11px] font-semibold uppercase tracking-widest text-ink-faint">Top candidates</h3>
+          <div className="mb-8 flex flex-col">
             {topCandidates.map((c, i) => (
-              <CandidateRow
-                key={c.id ?? i}
-                c={c}
-                rank={i + 1}
-                isTop
-                onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }}
-              />
+              <CandidateRow key={c.id ?? i} c={c} rank={i + 1} isTop onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
             ))}
           </div>
 
           {isLoggedIn && candidates.length > cutoff && (
             <>
-              <h3 className="mb-3 font-ui text-xs font-semibold uppercase tracking-widest text-ink-faint">All other candidates</h3>
-              <div className="mb-6 flex flex-col gap-2">
+              <h3 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-ink-faint">All other candidates</h3>
+              <div className="mb-8 flex flex-col">
                 {candidates.slice(cutoff).map((c, i) => (
-                  <CandidateRow
-                    key={c.id ?? cutoff + i}
-                    c={c}
-                    rank={cutoff + i + 1}
-                    onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }}
-                  />
+                  <CandidateRow key={c.id ?? cutoff + i} c={c} rank={cutoff + i + 1} onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
                 ))}
               </div>
             </>
           )}
 
           {!isLoggedIn && candidates.length > cutoff && (
-            <div className="rounded-xl border border-dashed border-paper-line bg-paper-card p-7 text-left">
+            <div className="mt-2">
               <p className="text-lg font-semibold text-ink">View all {candidates.length} candidates</p>
-              <p className="mt-2 font-ui text-sm text-ink-muted">
-                Sign in to unlock full rankings, detailed profiles, AI chat, and email tools.
-              </p>
-              <button
-                type="button"
-                onClick={() => requireLogin(() => setPage("results"))}
-                className={`mt-5 px-6 py-2.5 ${btnPrimary}`}
-              >
+              <p className="mt-1 font-ui text-sm text-ink-muted">Sign in to unlock full rankings, profiles, AI chat, and email tools.</p>
+              <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`mt-4 px-6 py-2.5 ${btnPrimary}`}>
                 Log in / Sign up
               </button>
             </div>
@@ -655,98 +504,83 @@ export function HiringApp() {
   if (page === "profile" && selected) {
     const c = selected;
     return (
-      <div className="hiring-shell flex flex-col">
-        <Nav
-          isLoggedIn={isLoggedIn}
-          onLogin={() => setPage("login")}
-          onLogout={() => setIsLoggedIn(false)}
-          onHome={() => setPage("home")}
-          apiBase={apiBase}
-          apiConfigLoaded={apiConfigLoaded}
-        />
-        <div className="fade-in-up mx-auto w-full max-w-2xl px-4 py-6 text-left">
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
           <button
             type="button"
             onClick={() => setPage("results")}
-            className="mb-4 flex items-center gap-1 rounded-md px-2 py-1 font-ui text-sm text-accent transition-colors duration-150 hover:bg-accent-soft/50 hover:text-accent-hover"
+            className="mb-6 flex items-center gap-1 font-ui text-sm text-ink-faint transition-colors duration-150 hover:text-ink-muted"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Back to results
           </button>
 
-          <div className="mb-4 rounded-xl border border-paper-line/80 bg-paper-card p-6 shadow-sm shadow-paper-line/30">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-paper-line bg-paper text-xl font-semibold text-accent/80">
-                  {c.name?.[0]?.toUpperCase() || "?"}
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-ink">{c.name}</h2>
-                  <p className="mt-0.5 font-ui text-sm text-ink-muted">{c.recent_role}</p>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-ui text-xs text-ink-faint">
-                    {c.email && <span>{c.email}</span>}
-                    {c.phone && <span>{c.phone}</span>}
-                  </div>
-                </div>
-              </div>
-              <ScorePill score={c.score ?? 0} />
+          {/* Header */}
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10 text-lg font-semibold text-accent">
+              {c.name?.[0]?.toUpperCase() || "?"}
             </div>
-            <p className="mt-4 border-t border-paper-line/60 pt-4 text-sm italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
-            {c.score_rationale && (
-              <p className="mt-2 font-ui text-xs text-ink-faint">Score rationale: {c.score_rationale}</p>
-            )}
-
-            {c.skills && c.skills.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {c.skills.map((s) => (
-                  <span key={s} className="rounded-md border border-paper-line/80 bg-paper px-2 py-0.5 font-ui text-xs text-ink-muted">
-                    {s}
-                  </span>
-                ))}
+            <div className="flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-2xl font-bold tracking-tight text-ink">{c.name}</h2>
+                <ScorePill score={c.score ?? 0} />
               </div>
-            )}
+              <p className="mt-0.5 font-ui text-sm text-ink-muted">{c.recent_role}</p>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-ui text-xs text-ink-faint">
+                {c.email && <span>{c.email}</span>}
+                {c.phone && <span>{c.phone}</span>}
+              </div>
+            </div>
           </div>
 
-          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-paper-line/80 bg-paper-card p-4 shadow-sm shadow-paper-line/30">
-              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-emerald-800/80">Strengths</h4>
+          <p className="mt-6 text-[15px] italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
+          {c.score_rationale && <p className="mt-2 font-ui text-xs text-ink-faint">{c.score_rationale}</p>}
+
+          {c.skills && c.skills.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-1.5">
+              {c.skills.map((s) => (
+                <span key={s} className="rounded-full bg-paper-line/25 px-2.5 py-0.5 font-ui text-xs text-ink-muted">{s}</span>
+              ))}
+            </div>
+          )}
+
+          {/* Strengths & Gaps */}
+          <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
+            <div>
+              <h4 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-emerald-800/70">Strengths</h4>
               <ul className="flex flex-col gap-2">
                 {(c.strengths || []).map((s, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-ink-muted">
-                    <span className="mt-0.5 shrink-0 text-emerald-600/60">•</span>
-                    {s}
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
+                    <span className="mt-1 shrink-0 text-emerald-600/50">•</span>{s}
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="rounded-xl border border-paper-line/80 bg-paper-card p-4 shadow-sm shadow-paper-line/30">
-              <h4 className="mb-3 font-ui text-xs font-semibold uppercase tracking-wider text-red-800/70">Gaps</h4>
+            <div>
+              <h4 className="mb-3 font-ui text-[11px] font-semibold uppercase tracking-widest text-red-800/60">Gaps</h4>
               <ul className="flex flex-col gap-2">
                 {(c.weaknesses || []).map((w, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-ink-muted">
-                    <span className="mt-0.5 shrink-0 text-red-500/50">•</span>
-                    {w}
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
+                    <span className="mt-1 shrink-0 text-red-500/40">•</span>{w}
                   </li>
                 ))}
               </ul>
             </div>
           </div>
 
-          <div className="mb-4 rounded-xl border border-paper-line/80 bg-paper-card p-5 shadow-sm shadow-paper-line/30">
-            <h3 className="mb-3 font-semibold text-ink">Interview request email</h3>
+          {/* Email */}
+          <div className="mt-10">
+            <h3 className="text-lg font-bold text-ink">Interview request</h3>
             {emailState === "idle" && (
-              <button type="button" onClick={generateEmail} className={`px-5 py-2 ${btnPrimary}`}>
-                Generate draft
-              </button>
+              <button type="button" onClick={generateEmail} className={`mt-3 px-5 py-2 ${btnPrimary}`}>Generate draft</button>
             )}
-            {emailState === "generating" && <Spinner label="Drafting email…" />}
+            {emailState === "generating" && <div className="mt-3"><Spinner label="Drafting email…" /></div>}
             {emailState === "editing" && (
-              <div>
-                <p className="mb-2 font-ui text-xs text-ink-faint">
-                  To: <span className="text-ink-muted">{c.email || "[no email found]"}</span>
-                </p>
+              <div className="mt-3">
+                <p className="mb-2 font-ui text-xs text-ink-faint">To: <span className="text-ink-muted">{c.email || "[no email found]"}</span></p>
                 <textarea
                   rows={9}
                   className={`${inputClass} mb-3 font-mono text-[13px] leading-relaxed`}
@@ -754,48 +588,37 @@ export function HiringApp() {
                   onChange={(e) => setEmailDraft(e.target.value)}
                 />
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setEmailState("sent")} className={`px-5 py-2 ${btnPrimary}`}>
-                    Send email
-                  </button>
-                  <button type="button" onClick={() => setEmailState("idle")} className={`px-4 py-2 ${btnSecondary}`}>
-                    Discard
-                  </button>
+                  <button type="button" onClick={() => setEmailState("sent")} className={`px-5 py-2 ${btnPrimary}`}>Send email</button>
+                  <button type="button" onClick={() => setEmailState("idle")} className={`px-4 py-2 ${btnSecondary}`}>Discard</button>
                 </div>
               </div>
             )}
-            {emailState === "sent" && (
-              <p className="font-ui text-sm font-medium text-emerald-800/80">Interview request sent to {c.email || c.name}</p>
-            )}
+            {emailState === "sent" && <p className="mt-3 font-ui text-sm text-emerald-800/70">Interview request sent to {c.email || c.name}</p>}
           </div>
 
-          <div className="rounded-xl border border-paper-line/80 bg-paper-card p-5 shadow-sm shadow-paper-line/30">
-            <h3 className="mb-3 font-semibold text-ink">Ask about this candidate</h3>
-            <div className="mb-3 flex min-h-16 max-h-64 flex-col gap-2 overflow-y-auto">
+          {/* Chat */}
+          <div className="mt-10">
+            <h3 className="text-lg font-bold text-ink">Ask about this candidate</h3>
+            <div className="mt-3 flex min-h-12 max-h-64 flex-col gap-2 overflow-y-auto">
               {chat.length === 0 && (
-                <p className="font-ui text-xs italic text-ink-faint">
-                  For example: years of experience with a stack, or how they might fit the team.
-                </p>
+                <p className="font-ui text-xs italic text-ink-faint">For example: years of experience with a stack, or how they might fit the team.</p>
               )}
               {chat.map((m, i) => (
                 <div
                   key={i}
-                  className={`max-w-[85%] px-3 py-2 text-sm transition-opacity duration-200 ${
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${
                     m.role === "user"
-                      ? "self-end rounded-xl rounded-br-sm bg-accent/10 text-accent"
-                      : "self-start rounded-xl rounded-bl-sm border border-paper-line/80 bg-paper text-ink-muted"
+                      ? "self-end bg-accent/10 text-accent"
+                      : "self-start bg-paper-line/20 text-ink-muted"
                   }`}
                 >
                   {m.content}
                 </div>
               ))}
-              {chatLoading && (
-                <div className="self-start">
-                  <Spinner label="Thinking…" />
-                </div>
-              )}
+              {chatLoading && <div className="self-start"><Spinner label="Thinking…" /></div>}
               <div ref={chatEndRef} />
             </div>
-            <div className="flex gap-2">
+            <div className="mt-3 flex gap-2">
               <input
                 className={`flex-1 ${inputClass}`}
                 placeholder="Ask about this candidate…"
@@ -803,12 +626,7 @@ export function HiringApp() {
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendChat()}
               />
-              <button
-                type="button"
-                onClick={sendChat}
-                disabled={chatLoading || !chatInput.trim()}
-                className={`shrink-0 px-4 py-2 ${btnPrimary}`}
-              >
+              <button type="button" onClick={sendChat} disabled={chatLoading || !chatInput.trim()} className={`shrink-0 px-4 py-2 ${btnPrimary}`}>
                 Send
               </button>
             </div>
@@ -844,13 +662,13 @@ function CandidateRow({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full cursor-pointer items-center justify-between rounded-xl border px-4 py-3.5 text-left transition-all duration-150 hover:border-accent/25 hover:shadow-sm hover:shadow-accent/5 active:scale-[0.995] ${
-        isTop ? "border-paper-line/80 bg-paper-card" : "border-paper-line/60 bg-paper-card/80"
+      className={`group flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-3 text-left transition-all duration-150 hover:bg-paper-line/15 active:scale-[0.998] ${
+        isTop ? "" : "opacity-90"
       }`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span className="w-6 shrink-0 text-center font-ui text-xs font-semibold text-ink-faint">#{rank}</span>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-paper-line bg-paper font-ui text-sm font-semibold text-accent/80">
+        <span className="w-5 shrink-0 font-ui text-xs font-semibold text-ink-faint/60">{rank}</span>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/8 font-ui text-sm font-semibold text-accent/80">
           {c.name?.[0]?.toUpperCase() || "?"}
         </div>
         <div className="min-w-0">
@@ -858,15 +676,9 @@ function CandidateRow({
           <p className="truncate font-ui text-xs text-ink-faint">{c.recent_role || summary || ""}</p>
         </div>
       </div>
-      <div className="ml-3 flex shrink-0 items-center gap-3">
+      <div className="ml-3 flex shrink-0 items-center gap-2.5">
         <ScorePill score={c.score ?? 0} />
-        <svg
-          className="h-4 w-4 text-ink-faint/40 transition-colors duration-150 group-hover:text-accent/60"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden
-        >
+        <svg className="h-3.5 w-3.5 text-ink-faint/30 transition-colors duration-150 group-hover:text-ink-faint/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </div>
