@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.next/
 .DS_Store
 data/
 # Allow marketing blog data under src (repo root `data/` is still ignored for job uploads)

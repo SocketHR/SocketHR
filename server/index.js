@@ -1,8 +1,9 @@
 import express from "express";
 import cors from "cors";
 import { randomUUID } from "crypto";
+import { jwtVerify } from "jose";
 import { chatCompletion } from "./lmstudio.js";
-import { saveJobSubmission, saveResults } from "./storage.js";
+import { saveJobSubmission, saveResults, saveStoredResumes } from "./storage.js";
 import { resumeToText } from "./resumeText.js";
 import {
   isWaitlistSmtpConfigured,
@@ -12,6 +13,16 @@ import {
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "";
+const AUTH_SECRET_BYTES = new TextEncoder().encode(AUTH_SECRET);
+const AUTH_ISSUER = "sockethr-next";
+const AUTH_AUDIENCE = "sockethr-mac-api";
+const ALLOWED_ORIGINS = new Set(
+  (process.env.ALLOWED_ORIGINS || "https://sockethr.com,http://localhost:3000,http://127.0.0.1:3000")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean),
+);
 
 function safeParseJSON(raw) {
   if (!raw || typeof raw !== "string") throw new Error("Empty model response");
@@ -38,11 +49,42 @@ function normalizeScoredArray(parsed) {
 const app = express();
 app.use(
   cors({
-    origin: true,
+    origin(origin, cb) {
+      if (!origin || ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(express.json({ limit: "50mb" }));
+
+async function getAuthFromRequest(req) {
+  if (!AUTH_SECRET) {
+    const err = new Error("Missing AUTH_SECRET on API server");
+    err.statusCode = 500;
+    throw err;
+  }
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1];
+  if (!token) {
+    const err = new Error("Missing bearer token");
+    err.statusCode = 401;
+    throw err;
+  }
+  const verified = await jwtVerify(token, AUTH_SECRET_BYTES, {
+    issuer: AUTH_ISSUER,
+    audience: AUTH_AUDIENCE,
+  });
+  const uploaderEmail = String(verified.payload.email || verified.payload.sub || "").trim().toLowerCase();
+  if (!uploaderEmail) {
+    const err = new Error("Invalid token subject");
+    err.statusCode = 401;
+    throw err;
+  }
+  return { email: uploaderEmail, name: String(verified.payload.name || "") };
+}
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "sockethr-server" });
@@ -77,13 +119,16 @@ app.post("/api/waitlist", async (req, res) => {
  */
 app.post("/api/analyze", async (req, res) => {
   try {
+    const auth = await getAuthFromRequest(req);
+
     const { job, resumes } = req.body || {};
     if (!job || !resumes?.length) {
       return res.status(400).json({ error: "Missing job or resumes" });
     }
 
     const jobId = randomUUID();
-    await saveJobSubmission(jobId, job, resumes);
+    const uploaderId = auth.email;
+    await saveJobSubmission(jobId, uploaderId, job, resumes);
 
     const extracted = [];
 
@@ -149,16 +194,25 @@ For each candidate return:
           strengths: s.strengths || [],
           weaknesses: s.weaknesses || [],
           fit_summary: s.fit_summary || "",
+          storedLocally: false,
+          storageWarning: "",
         };
       })
       .sort((a, b) => b.score - a.score);
 
-    await saveResults(jobId, { job, candidates });
+    const storage = await saveStoredResumes(jobId, uploaderId, resumes, extracted);
+    const candidatesWithStorage = candidates.map((candidate) => ({
+      ...candidate,
+      storedLocally: Boolean(storage.storedByIndex[candidate.id]),
+      storageWarning: storage.skippedByIndex[candidate.id] || "",
+    }));
 
-    res.json({ jobId, candidates });
+    await saveResults(jobId, uploaderId, { job, candidates: candidatesWithStorage, storage });
+
+    res.json({ jobId, candidates: candidatesWithStorage, storage });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message || "Analysis failed" });
+    res.status(e.statusCode || 500).json({ error: e.message || "Analysis failed" });
   }
 });
 
@@ -168,6 +222,7 @@ For each candidate return:
  */
 app.post("/api/chat", async (req, res) => {
   try {
+    await getAuthFromRequest(req);
     const { job, selected, messages } = req.body || {};
     if (!job || !selected || !messages?.length) {
       return res.status(400).json({ error: "Missing job, selected, or messages" });
@@ -197,7 +252,7 @@ ${JSON.stringify(selected, null, 2)}`;
     res.json({ reply });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message || "Chat failed" });
+    res.status(e.statusCode || 500).json({ error: e.message || "Chat failed" });
   }
 });
 
@@ -207,6 +262,7 @@ ${JSON.stringify(selected, null, 2)}`;
  */
 app.post("/api/email", async (req, res) => {
   try {
+    await getAuthFromRequest(req);
     const { job, selected } = req.body || {};
     if (!job || !selected) {
       return res.status(400).json({ error: "Missing job or selected candidate" });
@@ -227,7 +283,7 @@ Write only the email body, no subject line.`;
     res.json({ draft });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message || "Email generation failed" });
+    res.status(e.statusCode || 500).json({ error: e.message || "Email generation failed" });
   }
 });
 

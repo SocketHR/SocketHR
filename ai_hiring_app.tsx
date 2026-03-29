@@ -1,3 +1,5 @@
+"use client";
+
 import {
   useState,
   useRef,
@@ -6,6 +8,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { DEFAULT_API_BASE, useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
 
 const RECRUITER_LOADING_TIPS = [
@@ -79,6 +82,7 @@ function WizardProgress({ step, total = 2 }: { step: number; total?: number }) {
 
 function Nav({
   isLoggedIn,
+  userName,
   onLogin,
   onLogout,
   onHome,
@@ -86,6 +90,7 @@ function Nav({
   apiConfigLoaded = true,
 }: {
   isLoggedIn: boolean;
+  userName?: string | null;
   onLogin: () => void;
   onLogout: () => void;
   onHome: () => void;
@@ -115,7 +120,7 @@ function Nav({
         </button>
         {isLoggedIn ? (
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-ink-muted sm:block">Alex Johnson</span>
+            <span className="hidden text-sm text-ink-muted sm:block">{userName || "Signed in"}</span>
             <button type="button" onClick={onLogout} className="rounded-lg px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted">
               Sign out
             </button>
@@ -137,13 +142,25 @@ function Nav({
 // ── Main App ──────────────────────────────────────────────────────────────────
 export function HiringApp() {
   const { apiBase, configLoaded: apiConfigLoaded } = useSockethrRuntimeConfig();
+  const { data: session, status } = useSession();
+  const isLoggedIn = status === "authenticated";
+  const userName = session?.user?.name ?? session?.user?.email ?? null;
 
   const postJson = useCallback(
     async (path: string, body: unknown) => {
+      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
       const base = apiBase.replace(/\/$/, "");
       const res = await fetch(`${base}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
@@ -154,7 +171,6 @@ export function HiringApp() {
   );
 
   const [page, setPage] = useState("home");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
   const [resumeFiles, setResumeFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
@@ -193,10 +209,14 @@ export function HiringApp() {
   }
 
   function handleLogin() {
-    setIsLoggedIn(true);
+    signIn("google");
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
     if (pendingNav) { pendingNav(); setPendingNav(null); }
     else setPage(candidates.length ? "results" : "home");
-  }
+  }, [isLoggedIn, pendingNav, candidates.length]);
 
   async function handleFileSelect(
     e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
@@ -231,14 +251,22 @@ export function HiringApp() {
 
   async function analyzeResumes() {
     if (!resumeFiles.length) return alert("Please upload at least one resume.");
+    if (!isLoggedIn) {
+      setPage("login");
+      return alert("Sign in with Google to analyze resumes.");
+    }
     setLoading(true);
     setCandidates([]);
     try {
-      const { candidates: merged } = await postJson("/api/analyze", {
+      const { candidates: merged, storage } = await postJson("/api/analyze", {
         job,
         resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
       });
       setCandidates(merged);
+      const skippedCount = Number((storage as { skippedCount?: number } | undefined)?.skippedCount || 0);
+      if (skippedCount > 0) {
+        alert(`${skippedCount} resume(s) were ranked but not stored because no applicant email was detected.`);
+      }
       setPage("results");
     } catch (err) {
       console.error(err);
@@ -307,7 +335,7 @@ export function HiringApp() {
   if (page === "home")
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
           <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
           <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
@@ -326,14 +354,12 @@ export function HiringApp() {
   if (page === "login")
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => {}} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => {}} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content} style={{ maxWidth: "24rem" }}>
           <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
           <div className="mt-8 flex flex-col gap-3">
-            <input className={inputClass} placeholder="Email address" />
-            <input className={inputClass} type="password" placeholder="Password" />
-            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Sign in</button>
-            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnSecondary}`}>Continue with demo account</button>
+            <p className="font-ui text-sm text-ink-muted">Continue with your Google account to access resume analysis.</p>
+            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Continue with Google</button>
           </div>
           <button
             type="button"
@@ -352,7 +378,7 @@ export function HiringApp() {
   if (page === "job")
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
           <WizardProgress step={1} />
           <h2 className="text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
@@ -402,7 +428,7 @@ export function HiringApp() {
 
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
           <WizardProgress step={2} />
           <h2 className="text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
@@ -467,7 +493,7 @@ export function HiringApp() {
   if (page === "results") {
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className="fade-in-up mx-auto w-full max-w-3xl px-6 py-10 text-left sm:px-10">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
@@ -512,7 +538,7 @@ export function HiringApp() {
     const c = selected;
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
         <div className={content}>
           <button
             type="button"

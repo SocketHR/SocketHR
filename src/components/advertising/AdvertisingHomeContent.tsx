@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, type FormEvent } from "react";
 import { useSockethrRuntimeConfig } from "../../lib/useSockethrRuntimeConfig";
 
@@ -11,7 +13,7 @@ function CheckIcon() {
   );
 }
 
-export function AdvertisingHome() {
+export function AdvertisingHomeContent() {
   const { apiBase, configLoaded } = useSockethrRuntimeConfig();
   const waitlistPostUrl = `${apiBase.replace(/\/$/, "")}/api/waitlist`;
   const [firstName, setFirstName] = useState("");
@@ -68,7 +70,6 @@ export function AdvertisingHome() {
 
   return (
     <>
-      {/* Hero */}
       <section className="relative overflow-hidden px-4 pb-20 pt-16 sm:px-6 sm:pb-28 sm:pt-24">
         <div className="mx-auto max-w-5xl text-center">
           <p className="font-display text-xs font-bold uppercase tracking-[0.4em] text-cyan-400">Get Started</p>
@@ -102,7 +103,6 @@ export function AdvertisingHome() {
         </div>
       </section>
 
-      {/* Pricing */}
       <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6" id="plans">
         <h2 className="text-center font-display text-3xl font-bold text-white sm:text-4xl">
           Choose Your Path to Efficiency
@@ -118,30 +118,13 @@ export function AdvertisingHome() {
               $0<span className="text-lg font-normal text-zinc-500"></span>
             </p>
             <ul className="mt-8 flex flex-col gap-4 text-zinc-300">
-              <li className="flex gap-3">
-                <CheckIcon />3 Job Listings/Mo
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                100 resumes max per listing
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                AI Resume Ranking and Basic Dashboard
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                Limited Follow Up Questions to filter through and find specific information in resumes
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                Indeed/Linkedin Multi-Platform Integration
-              </li>
+              <li className="flex gap-3"><CheckIcon />3 Job Listings/Mo</li>
+              <li className="flex gap-3"><CheckIcon />100 resumes max per listing</li>
+              <li className="flex gap-3"><CheckIcon />AI Resume Ranking and Basic Dashboard</li>
+              <li className="flex gap-3"><CheckIcon />Limited Follow Up Questions to filter through and find specific information in resumes</li>
+              <li className="flex gap-3"><CheckIcon />Indeed/Linkedin Multi-Platform Integration</li>
             </ul>
-            <a
-              href="#waitlist"
-              className="mt-10 block rounded-2xl border border-white/20 py-4 text-center font-semibold text-white transition hover:bg-white/5"
-            >
+            <a href="#waitlist" className="mt-10 block rounded-2xl border border-white/20 py-4 text-center font-semibold text-white transition hover:bg-white/5">
               SECURE EARLY ACCESS
             </a>
           </div>
@@ -155,38 +138,19 @@ export function AdvertisingHome() {
               $30<span className="text-xl font-semibold text-zinc-400"> /mo</span>
             </p>
             <ul className="mt-8 flex flex-col gap-4 text-zinc-200">
-              <li className="flex gap-3">
-                <CheckIcon />
-                10 Job Listings/Mo
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                1,000 Resumes Max per Listing
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                Advanced AI Ranking Logic and Dashboard
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                Automatic Email Follow-Up Integration for each Candidate
-              </li>
-              <li className="flex gap-3">
-                <CheckIcon />
-                Everything in Free Plan
-              </li>
+              <li className="flex gap-3"><CheckIcon />10 Job Listings/Mo</li>
+              <li className="flex gap-3"><CheckIcon />1,000 Resumes Max per Listing</li>
+              <li className="flex gap-3"><CheckIcon />Advanced AI Ranking Logic and Dashboard</li>
+              <li className="flex gap-3"><CheckIcon />Automatic Email Follow-Up Integration for each Candidate</li>
+              <li className="flex gap-3"><CheckIcon />Everything in Free Plan</li>
             </ul>
-            <a
-              href="#waitlist"
-              className="mt-10 block rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-center font-bold text-white shadow-lg transition hover:brightness-110"
-            >
+            <a href="#waitlist" className="mt-10 block rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-center font-bold text-white shadow-lg transition hover:brightness-110">
               GET PRO PLAN
             </a>
           </div>
         </div>
       </section>
 
-      {/* Evolution */}
       <section className="border-y border-white/10 bg-black/30 py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <p className="font-display text-xs font-bold uppercase tracking-[0.35em] text-zinc-500">The Evolution</p>
@@ -207,28 +171,15 @@ export function AdvertisingHome() {
         </div>
       </section>
 
-      {/* Workflow */}
       <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
         <h2 className="text-center font-display text-3xl font-bold text-white sm:text-4xl">Streamlined Hiring Workflow</h2>
         <div className="mt-16 grid gap-10 md:grid-cols-3">
           {[
-            {
-              title: "Automated Applicant Ranking",
-              body: "Our AI instantly analyzes hundreds of resumes to rank candidates based on your specific role requirements.",
-            },
-            {
-              title: "Instant Response System",
-              body: "Automatically engage with every applicant within minutes, ensuring a premium experience for every candidate.",
-            },
-            {
-              title: "Indeed Integration",
-              body: "SocketAI plugs directly into your Indeed workflow, managing your inbox without you lifting a finger.",
-            },
+            { title: "Automated Applicant Ranking", body: "Our AI instantly analyzes hundreds of resumes to rank candidates based on your specific role requirements." },
+            { title: "Instant Response System", body: "Automatically engage with every applicant within minutes, ensuring a premium experience for every candidate." },
+            { title: "Indeed Integration", body: "SocketAI plugs directly into your Indeed workflow, managing your inbox without you lifting a finger." },
           ].map((item) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-white/10 bg-zinc-900/30 p-8 transition hover:border-cyan-500/30"
-            >
+            <div key={item.title} className="rounded-2xl border border-white/10 bg-zinc-900/30 p-8 transition hover:border-cyan-500/30">
               <h3 className="font-display text-lg font-bold text-white">{item.title}</h3>
               <p className="mt-4 leading-relaxed text-zinc-400">{item.body}</p>
             </div>
@@ -236,7 +187,6 @@ export function AdvertisingHome() {
         </div>
       </section>
 
-      {/* Waitlist intro strip */}
       <section className="border-y border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 via-blue-600/10 to-purple-500/10 py-16">
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
           <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">Get Early Access</h2>
@@ -247,7 +197,6 @@ export function AdvertisingHome() {
         </div>
       </section>
 
-      {/* Waitlist form */}
       <section className="mx-auto max-w-xl px-4 py-24 sm:px-6" id="waitlist">
         <div className="rounded-3xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl sm:p-10">
           <h2 className="font-display text-center text-2xl font-bold text-white sm:text-3xl">JOIN THE WAITLIST</h2>
@@ -262,90 +211,40 @@ export function AdvertisingHome() {
             <form onSubmit={onSubmit} className="mt-10 flex flex-col gap-5" noValidate>
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300">
-                    First name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                    placeholder="Jane"
-                    autoComplete="given-name"
-                  />
+                  <label className="block text-sm font-medium text-zinc-300">First name <span className="text-red-400">*</span></label>
+                  <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="Jane" autoComplete="given-name" />
                   {errors.firstName && <p className="mt-1 text-xs text-red-400">{errors.firstName}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300">
-                    Last name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                    placeholder="Doe"
-                    autoComplete="family-name"
-                  />
+                  <label className="block text-sm font-medium text-zinc-300">Last name <span className="text-red-400">*</span></label>
+                  <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="Doe" autoComplete="family-name" />
                   {errors.lastName && <p className="mt-1 text-xs text-red-400">{errors.lastName}</p>}
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-300">Company name</label>
-                <input
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                  placeholder="Acme Inc."
-                  autoComplete="organization"
-                />
+                <input value={company} onChange={(e) => setCompany(e.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="Acme Inc." autoComplete="organization" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-300">
-                  Email <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                />
+                <label className="block text-sm font-medium text-zinc-300">Email <span className="text-red-400">*</span></label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="you@company.com" autoComplete="email" />
                 {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-300">Phone</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                  placeholder="+1 …"
-                  autoComplete="tel"
-                />
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="+1 …" autoComplete="tel" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-300">Notes (optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  maxLength={WAITLIST_NOTES_MAX_LENGTH}
-                  className="mt-1.5 min-h-28 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                  placeholder="Anything you want us to know about your hiring goals, team size, or timeline."
-                />
-                <p className="mt-1 text-right text-xs text-zinc-500">
-                  {notes.length}/{WAITLIST_NOTES_MAX_LENGTH}
-                </p>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={WAITLIST_NOTES_MAX_LENGTH} className="mt-1.5 min-h-28 w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30" placeholder="Anything you want us to know about your hiring goals, team size, or timeline." />
+                <p className="mt-1 text-right text-xs text-zinc-500">{notes.length}/{WAITLIST_NOTES_MAX_LENGTH}</p>
               </div>
               {submitError && (
                 <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
                   {submitError}
                 </p>
               )}
-              <button
-                type="submit"
-                disabled={isSubmitting || !configLoaded}
-                className="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-lg font-bold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button type="submit" disabled={isSubmitting || !configLoaded} className="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 py-4 text-lg font-bold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
                 {isSubmitting ? "Sending…" : "Submit"}
               </button>
               <p className="text-center text-xs text-zinc-500">Launch partners will receive a lifetime discount on the Pro Plan.</p>
@@ -356,9 +255,7 @@ export function AdvertisingHome() {
 
       <footer className="border-t border-white/10 py-12 text-center text-sm text-zinc-500">
         <p>© {new Date().getFullYear()} SocketAI. All rights reserved.</p>
-        <p className="mt-2">
-          Scale Faster, Hire Smarter · Built for teams using the SocketHR app at sockethr.com
-        </p>
+        <p className="mt-2">Scale Faster, Hire Smarter · Built for teams using the SocketHR app at sockethr.com</p>
       </footer>
     </>
   );

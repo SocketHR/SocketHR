@@ -1,9 +1,9 @@
-import { Link, Navigate, useParams } from "react-router-dom";
+import Link from "next/link";
 import { getPostBySlug, type BlogBlock } from "../../data/socketaiBlogPosts";
 
 function formatDate(iso: string) {
   try {
-    return new Date(iso + "T12:00:00").toLocaleDateString("en-US", {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -18,9 +18,7 @@ function BlockView({ block }: { block: BlogBlock }) {
     case "p":
       return <p className="mt-6 leading-relaxed text-zinc-300 first:mt-0">{block.text}</p>;
     case "h2":
-      return (
-        <h2 className="mt-14 font-display text-2xl font-bold text-white first:mt-0 sm:text-3xl">{block.text}</h2>
-      );
+      return <h2 className="mt-14 font-display text-2xl font-bold text-white first:mt-0 sm:text-3xl">{block.text}</h2>;
     case "h3":
       return <h3 className="mt-8 font-display text-xl font-semibold text-white">{block.text}</h3>;
     case "ul":
@@ -39,20 +37,13 @@ function BlockView({ block }: { block: BlogBlock }) {
   }
 }
 
-export function BlogPost() {
-  const { slug } = useParams<{ slug: string }>();
+export function BlogPostContent({ slug }: { slug: string }) {
   const post = getPostBySlug(slug);
-
-  if (!post) {
-    return <Navigate to="/advertising/blog" replace />;
-  }
+  if (!post) return null;
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:py-16">
-      <Link
-        to="/advertising/blog"
-        className="inline-flex items-center gap-1 text-sm font-medium text-cyan-400 hover:text-cyan-300"
-      >
+      <Link href="/advertising/blog" className="inline-flex items-center gap-1 text-sm font-medium text-cyan-400 hover:text-cyan-300">
         ← Back to blog
       </Link>
       <header className="mt-8 border-b border-white/10 pb-10">
