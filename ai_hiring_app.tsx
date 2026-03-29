@@ -153,7 +153,7 @@ export function HiringApp() {
     setLoadingTipIndex(0);
     const id = window.setInterval(() => {
       setLoadingTipIndex((i) => (i + 1) % RECRUITER_LOADING_TIPS.length);
-    }, 3500);
+    }, 17500);
     return () => window.clearInterval(id);
   }, [loading]);
 
