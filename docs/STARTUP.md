@@ -69,7 +69,14 @@ cd /Users/yanlevin/github/sockethr
 npm run dev
 ```
 
-Open **http://localhost:5173** — dev mode loads **`public/runtime-config.json`** the same as production, so the UI calls **`https://api.sockethr.com`** (your tunnel must be up for API calls to succeed). To force a **local-only** API during dev, set **`VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000`** (e.g. in `.env.local`).
+Open **http://localhost:3000**.  
+By default the UI reads **`public/runtime-config.json`** and calls **`https://api.sockethr.com`** (your tunnel must be up).
+
+To force local API during dev:
+
+```bash
+NEXT_PUBLIC_SOCKETHR_API_BASE=http://127.0.0.1:3000 npm run dev
+```
 
 ---
 
@@ -87,7 +94,18 @@ The last command should return `{"ok":true,"service":"sockethr-server"}` when th
 
 ## Vercel
 
-The site redeploys from **Git**. After `git push`, Vercel builds automatically. Optional env **`VITE_SOCKETHR_API_BASE`** should match **`https://api.sockethr.com`** (or rely on `runtime-config.json` in the repo).
+The site redeploys from **Git**. After `git push`, Vercel builds automatically.
+
+Set these env vars in Vercel:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `NEXTAUTH_URL=https://sockethr.com`
+- `NEXTAUTH_SECRET=<strong random secret>`
+
+Optional:
+
+- `NEXT_PUBLIC_SOCKETHR_API_BASE=https://api.sockethr.com` (or rely on `public/runtime-config.json`)
 
 ---
 

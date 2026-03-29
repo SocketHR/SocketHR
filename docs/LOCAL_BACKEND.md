@@ -57,45 +57,47 @@ npm run server:dev
 npm run dev
 ```
 
-Open the Vite URL (e.g. `http://localhost:5173`). By default the UI uses **`https://api.sockethr.com`** (from `public/runtime-config.json`), same as production. To call **only** your local Node server during dev, add **`.env.local`** in the repo root:
+Open `http://localhost:3000`.
 
-```env
-VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000
+By default the UI uses **`https://api.sockethr.com`** (from `public/runtime-config.json`), same as production.
+
+To force local API during dev:
+
+```bash
+NEXT_PUBLIC_SOCKETHR_API_BASE=http://127.0.0.1:3000 npm run dev
 ```
-
-Restart `npm run dev`.
 
 ## Point the frontend at another host
 
-If the browser is not on the same machine as the API, create `.env` in the **repo root**:
+If the browser is not on the same machine as the API, start the frontend with:
 
-```env
-VITE_SOCKETHR_API_BASE=http://192.168.1.10:3000
+```bash
+NEXT_PUBLIC_SOCKETHR_API_BASE=http://192.168.1.10:3000 npm run dev
 ```
-
-Restart `npm run dev`.
 
 ## API
 
 | Method | Path | Body |
 |--------|------|------|
 | `GET` | `/health` | — |
-| `POST` | `/api/analyze` | `{ job, resumes: [{ name, base64, type }] }` |
-| `POST` | `/api/chat` | `{ job, selected, messages: [{ role, content }] }` |
-| `POST` | `/api/email` | `{ job, selected }` |
+| `POST` | `/api/analyze` | `{ job, resumes: [{ name, base64, type }] }` + `Authorization: Bearer <token>` |
+| `POST` | `/api/chat` | `{ job, selected, messages: [{ role, content }] }` + bearer token |
+| `POST` | `/api/email` | `{ job, selected }` + bearer token |
 | `POST` | `/api/waitlist` | `{ firstName, lastName, company?, email, phone? }` |
 
 PDFs are **text-extracted on the server** (no vision); use PDF or `.txt` for best results.
 
 ## Stored data
 
-Each analyze run creates `data/jobs/<uuid>/` with:
+Each analyze run creates `SOCKETHR_DATA_DIR/<uploader>/<uuid>/` with:
 
 - `job.json` — job fields + metadata  
-- `resumes/` — uploaded files  
+- `resumes/<applicant-email>/` — only resumes where applicant email is detected
 - `results.json` — merged candidate list after analysis  
 
 `data/` is gitignored.
+
+Resumes without detected applicant email are still ranked but not stored.
 
 ## Running the server always-on (macOS)
 
@@ -103,6 +105,14 @@ Each analyze run creates `data/jobs/<uuid>/` with:
 - **launchd:** add a plist that runs `node` with `--env-file=.env` and `WorkingDirectory` set to `server/`.
 
 LM Studio must also be running (or use LM Studio CLI/headless if you automate loading the model).
+
+## Auth secret sync (required)
+
+The Mac API verifies signed tokens from the Next.js app.  
+Set the same secret value in both places:
+
+- Vercel: `NEXTAUTH_SECRET`
+- Mac `server/.env`: `AUTH_SECRET=<same value>`
 
 ## Advertising waitlist email (Gmail SMTP)
 
@@ -114,4 +124,4 @@ The `/advertising` waitlist form `POST`s JSON to **`POST /api/waitlist`** on the
 
 ## Public site (sockethr.com) + phone on LTE
 
-See **[PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md)** — HTTPS tunnel to your Mac, `VITE_SOCKETHR_API_BASE`, **`runtime-config.json`**, and optional GitHub Pages workflow. If the phone site fails, use **[TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md)**.
+See **[PUBLIC_TUNNEL.md](./PUBLIC_TUNNEL.md)** — HTTPS tunnel to your Mac, `NEXT_PUBLIC_SOCKETHR_API_BASE`, **`runtime-config.json`**, and optional GitHub Pages workflow. If the phone site fails, use **[TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md)**.

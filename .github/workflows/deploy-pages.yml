@@ -1,6 +1,6 @@
 # Optional: deploy static site to GitHub Pages (not used for production — sockethr.com is on Vercel).
 # Runs only when triggered manually so pushes to main do not start Pages builds.
-# To use: 1) Settings → Pages → Source: GitHub Actions  2) Secrets → add VITE_SOCKETHR_API_BASE
+# To use: 1) Settings → Pages → Source: GitHub Actions  2) Secrets → add NEXT_PUBLIC_SOCKETHR_API_BASE
 # To fully turn off Pages: Settings → Pages → Source: None
 
 name: Deploy to GitHub Pages
@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_SOCKETHR_API_BASE: ${{ secrets.VITE_SOCKETHR_API_BASE }}
+          NEXT_PUBLIC_SOCKETHR_API_BASE: ${{ secrets.NEXT_PUBLIC_SOCKETHR_API_BASE }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

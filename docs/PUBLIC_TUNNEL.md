@@ -14,9 +14,9 @@ LM Studio is **not** exposed publicly; only the Node server is. The server still
 
 The app fetches **`/runtime-config.json`** from the same host as the website. Commit default is empty `apiBase` ([`public/runtime-config.json`](../public/runtime-config.json)).
 
-The repo ships [`public/runtime-config.json`](../public/runtime-config.json) with **`https://api.sockethr.com`**. **`npm run dev`** loads that file too, so **this Mac uses the same public API URL as any other device**. Use **`VITE_SOCKETHR_API_BASE=http://127.0.0.1:3000`** only when you want the UI to talk to a local server without the tunnel.
+The repo ships [`public/runtime-config.json`](../public/runtime-config.json) with **`https://api.sockethr.com`**. **`npm run dev`** loads that file too, so **this Mac uses the same public API URL as any other device**. Use **`NEXT_PUBLIC_SOCKETHR_API_BASE=http://127.0.0.1:3000`** only when you want the UI to talk to a local server without the tunnel.
 
-To use a different public URL, edit **`public/runtime-config.json`** (or override with **`VITE_SOCKETHR_API_BASE`** on Vercel) and redeploy. See [TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md).
+To use a different public URL, edit **`public/runtime-config.json`** (or override with **`NEXT_PUBLIC_SOCKETHR_API_BASE`** on Vercel) and redeploy. See [TROUBLESHOOTING_MOBILE.md](./TROUBLESHOOTING_MOBILE.md).
 
 ---
 
@@ -66,7 +66,7 @@ Step-by-step: **[`deploy/cloudflared/README.md`](../deploy/cloudflared/README.md
 ngrok http 3000
 ```
 
-Use the printed **https://….ngrok-free.app** URL in **`runtime-config.json`** `apiBase` or as `VITE_SOCKETHR_API_BASE` when building (free tier URLs may change on restart unless you reserve one).
+Use the printed **https://….ngrok-free.app** URL in **`runtime-config.json`** `apiBase` or as `NEXT_PUBLIC_SOCKETHR_API_BASE` when running `npm run dev` (free tier URLs may change on restart unless you reserve one).
 
 ### Option 3: Tailscale Funnel
 
@@ -88,29 +88,27 @@ If this fails, fix DNS/tunnel before rebuilding the website.
 
 ---
 
-## Step C — Bake the API URL into the production build
-
-Vite reads **`.env.production`** automatically when you run `npm run build`.
+## Step C — Set the API URL for production
 
 ```bash
 cp .env.production.example .env.production
-# Edit: set VITE_SOCKETHR_API_BASE=https://api.sockethr.com  (no trailing slash)
+# Edit: set NEXT_PUBLIC_SOCKETHR_API_BASE=https://api.sockethr.com (optional)
 npm run build
 ```
 
-Or one-shot (prefix the **whole** command — do not use `VAR=value tsc && vite build`, or only `tsc` gets the variable):
+Or one-shot:
 
 ```bash
-VITE_SOCKETHR_API_BASE=https://api.sockethr.com npm run build
+NEXT_PUBLIC_SOCKETHR_API_BASE=https://api.sockethr.com npm run build
 ```
 
 `.env.production` is gitignored so your tunnel URL stays local unless you use CI secrets.
 
 ---
 
-## Step D — Deploy `dist/` to sockethr.com
+## Step D — Deploy to Vercel
 
-Upload the contents of **`dist/`** to your static host (Cloudflare Pages, Vercel, Netlify, S3, etc.).
+Push to Git; Vercel builds/deploys automatically.
 
 ### GitHub Pages (optional)
 
@@ -119,7 +117,7 @@ Production **sockethr.com** is deployed via **Vercel**, not GitHub Pages. This w
 This repo includes [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml). To use it:
 
 1. Repo **Settings → Pages**: Source = **GitHub Actions**.
-2. **Settings → Secrets and variables → Actions**: add repository secret **`VITE_SOCKETHR_API_BASE`** = your public API URL (e.g. `https://api.sockethr.com`).
+2. **Settings → Secrets and variables → Actions**: add repository secret **`NEXT_PUBLIC_SOCKETHR_API_BASE`** = your public API URL (e.g. `https://api.sockethr.com`) if you keep using this workflow.
 3. In **Actions**, select **Deploy to GitHub Pages**, then **Run workflow** (it does not run on every push).
 
 **To turn off GitHub Pages entirely** (e.g. stop Pages build emails): **Settings → Pages → Build and deployment → Source: None**.
@@ -139,7 +137,7 @@ This repo includes [`.github/workflows/deploy-pages.yml`](../.github/workflows/d
 
 - Mac must stay **awake** (adjust **Energy Saver** / **Prevent sleeping** while plugged in).
 - Run **tunnel** + **`npm run server`** after reboot (consider `pm2` or **launchd** for both).
-- If the public API URL changes, **rebuild** the frontend and **redeploy**.
+- If the public API URL changes, update `public/runtime-config.json` (or env override) and redeploy.
 
 ---
 

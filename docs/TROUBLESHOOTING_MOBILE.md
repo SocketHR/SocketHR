@@ -10,7 +10,7 @@
 
 **Fix without rebuilding JS:** edit **`runtime-config.json`** on your static host (see below).
 
-**Fix with a rebuild:** `VITE_SOCKETHR_API_BASE=https://YOUR_API_HOST npm run build` and redeploy `dist/`.
+**Fix with a rebuild:** `NEXT_PUBLIC_SOCKETHR_API_BASE=https://YOUR_API_HOST npm run build` and redeploy.
 
 ---
 
@@ -18,11 +18,11 @@
 
 The app loads **`/runtime-config.json`** from the **same origin** as the website (e.g. `https://sockethr.com/runtime-config.json`).
 
-[`public/runtime-config.json`](../public/runtime-config.json) (committed **`https://api.sockethr.com`**) is loaded in **both** production and **`npm run dev`**, so every device uses the same API base unless you set **`VITE_SOCKETHR_API_BASE`** for a local-only server.
+[`public/runtime-config.json`](../public/runtime-config.json) (committed **`https://api.sockethr.com`**) is loaded in **both** production and **`npm run dev`**, so every device uses the same API base unless you set **`NEXT_PUBLIC_SOCKETHR_API_BASE`** for a local-only server.
 
 **To point production at your tunnel** (HTTPS, no trailing slash):
 
-1. After `npm run build`, edit **`dist/runtime-config.json`** before upload, **or** upload a custom file to your host:
+1. Edit **`public/runtime-config.json`** (or host-level `runtime-config.json`) so it contains:
 
    ```json
    { "apiBase": "https://api.sockethr.com" }
@@ -57,15 +57,15 @@ curl -s http://127.0.0.1:1234/v1/models  # LM Studio server ON
 
 ## Step 4 — Rebuild + redeploy (rebuild-deploy)
 
-If you prefer the API URL **inside** the JS bundle only:
+If you prefer the API URL via env override:
 
 ```bash
-VITE_SOCKETHR_API_BASE=https://YOUR_API_HOST npm run build
+NEXT_PUBLIC_SOCKETHR_API_BASE=https://YOUR_API_HOST npm run build
 ```
 
-Deploy **`dist/`**. Do **not** use `VAR=value tsc && vite build` — the variable must apply to the whole `npm run build`.
+Redeploy after build.
 
-For **GitHub Actions** (optional GitHub Pages only), set repository secret **`VITE_SOCKETHR_API_BASE`** and run **Deploy to GitHub Pages** manually (see [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)).
+For **GitHub Actions** (optional GitHub Pages only), set repository secret **`NEXT_PUBLIC_SOCKETHR_API_BASE`** and run **Deploy to GitHub Pages** manually (see [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)).
 
 ---
 

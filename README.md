@@ -1,6 +1,12 @@
 # SocketHR
 
-AI-assisted hiring UI: job posting, resume upload, local LLM scoring via **LM Studio**, optional public **https://api.sockethr.com** for **https://sockethr.com** on mobile.
+AI-assisted hiring web app with:
+
+- Next.js frontend on Vercel
+- Google sign-in via Auth.js (`next-auth`)
+- Mac-hosted Express API behind `https://api.sockethr.com`
+- local LLM scoring via LM Studio
+- local resume persistence to USB (`SOCKETHR_DATA_DIR`)
 
 ## Runbook (copy-paste)
 
@@ -19,12 +25,15 @@ See **[docs/STARTUP.md](docs/STARTUP.md)** for the exact commands to start LM St
 
 | Command | Purpose |
 |--------|---------|
-| `npm run dev` | Vite dev server (UI uses **`https://api.sockethr.com`** like production; override with `VITE_SOCKETHR_API_BASE` for local-only API) |
-| `npm run build` | Production static `dist/` |
+| `npm run dev` | Next.js dev server (`http://localhost:3000`) |
+| `npm run build` | Next.js production build |
+| `npm run start` | Run Next.js production server |
 | `npm run server` | SocketHR API on port 3000 |
+| `npm run server:dev` | SocketHR API watch mode |
 
 ## Repo layout
 
-- `ai_hiring_app.tsx` — React app
+- `src/pages/` — Next.js pages + API routes (`/api/auth/[...nextauth]`, `/api/mac-token`)
+- `ai_hiring_app.tsx` — main hiring UI client component
 - `server/` — Express + PDF extract + LM Studio proxy
-- `public/runtime-config.json` — production API base (`https://api.sockethr.com`)
+- `public/runtime-config.json` — API base config (`https://api.sockethr.com` by default)
