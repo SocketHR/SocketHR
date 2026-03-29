@@ -24,10 +24,8 @@ const RECRUITER_LOADING_TIPS = [
 ];
 
 function buildInterviewMailto(opts: { to?: string; subject: string; body: string }): string {
-  const params = new URLSearchParams();
-  params.set("subject", opts.subject);
-  params.set("body", opts.body);
-  const query = params.toString();
+  // Use encodeURIComponent (spaces → %20), not URLSearchParams (+), so mail clients show real spaces.
+  const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
   const to = opts.to?.trim() ?? "";
   return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
 }
