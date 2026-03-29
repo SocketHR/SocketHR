@@ -260,7 +260,7 @@ export function HiringApp() {
     "rounded-lg bg-paper-line/20 font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/35 hover:text-ink active:scale-[0.98]";
 
   const shell = "hiring-shell flex flex-col";
-  const content = "fade-in-up w-full max-w-2xl px-6 py-10 text-left sm:px-10";
+  const content = "fade-in-up mx-auto w-full max-w-2xl px-6 py-10 text-left sm:px-10";
 
   // ════════════════════════════════════════════════════════════════════════════
   // PAGE: HOME
@@ -452,7 +452,7 @@ export function HiringApp() {
     return (
       <div className={shell}>
         <Nav isLoggedIn={isLoggedIn} onLogin={() => setPage("login")} onLogout={() => setIsLoggedIn(false)} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className="fade-in-up w-full max-w-3xl px-6 py-10 text-left sm:px-10">
+        <div className="fade-in-up mx-auto w-full max-w-3xl px-6 py-10 text-left sm:px-10">
           <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
           <div className="mt-1 flex items-baseline gap-4">
             <p className="font-ui text-sm text-ink-faint">{candidates.length} candidate{candidates.length !== 1 ? "s" : ""} analyzed</p>
