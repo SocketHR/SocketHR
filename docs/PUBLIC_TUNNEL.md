@@ -114,11 +114,15 @@ Upload the contents of **`dist/`** to your static host (Cloudflare Pages, Vercel
 
 ### GitHub Pages (optional)
 
+Production **sockethr.com** is deployed via **Vercel**, not GitHub Pages. This workflow exists only if you want a separate Pages site.
+
 This repo includes [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml). To use it:
 
 1. Repo **Settings → Pages**: Source = **GitHub Actions**.
 2. **Settings → Secrets and variables → Actions**: add repository secret **`VITE_SOCKETHR_API_BASE`** = your public API URL (e.g. `https://api.sockethr.com`).
-3. Push to `main`; the workflow builds with that variable and deploys `dist/`.
+3. In **Actions**, select **Deploy to GitHub Pages**, then **Run workflow** (it does not run on every push).
+
+**To turn off GitHub Pages entirely** (e.g. stop Pages build emails): **Settings → Pages → Build and deployment → Source: None**.
 
 ---
 

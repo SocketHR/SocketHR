@@ -1,12 +1,11 @@
-# Optional: deploy static site to GitHub Pages when sockethr.com uses Pages.
-# 1. Settings → Pages → Source: GitHub Actions
-# 2. Settings → Secrets → Actions: add VITE_SOCKETHR_API_BASE (e.g. https://api.sockethr.com)
+# Optional: deploy static site to GitHub Pages (not used for production — sockethr.com is on Vercel).
+# Runs only when triggered manually so pushes to main do not start Pages builds.
+# To use: 1) Settings → Pages → Source: GitHub Actions  2) Secrets → add VITE_SOCKETHR_API_BASE
+# To fully turn off Pages: Settings → Pages → Source: None
 
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

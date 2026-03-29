@@ -65,7 +65,7 @@ VITE_SOCKETHR_API_BASE=https://YOUR_API_HOST npm run build
 
 Deploy **`dist/`**. Do **not** use `VAR=value tsc && vite build` — the variable must apply to the whole `npm run build`.
 
-For **GitHub Actions**, set repository secret **`VITE_SOCKETHR_API_BASE`** (see [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)).
+For **GitHub Actions** (optional GitHub Pages only), set repository secret **`VITE_SOCKETHR_API_BASE`** and run **Deploy to GitHub Pages** manually (see [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)).
 
 ---
 
