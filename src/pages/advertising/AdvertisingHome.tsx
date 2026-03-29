@@ -72,10 +72,13 @@ export function AdvertisingHome() {
       <section className="relative overflow-hidden px-4 pb-20 pt-16 sm:px-6 sm:pb-28 sm:pt-24">
         <div className="mx-auto max-w-5xl text-center">
           <p className="font-display text-xs font-bold uppercase tracking-[0.4em] text-cyan-400">Get Started</p>
-          <h1 className="mt-6 font-display text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl">
+          <p className="mx-auto mt-5 max-w-xl text-lg font-medium tracking-tight text-zinc-300 sm:text-xl">
+            Scale Faster, Hire Smarter
+          </p>
+          <h1 className="mt-5 font-display text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl">
             HIRE WITH THE
             <br />
-            <span className="bg-gradient-to-r from-cyan-300 via-white to-blue-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-cyan-200 from-[12%] via-white via-50% to-cyan-200 to-[88%] bg-clip-text text-transparent">
               SPEED OF AI
             </span>
           </h1>
@@ -105,8 +108,8 @@ export function AdvertisingHome() {
           Choose Your Path to Efficiency
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-center text-zinc-400">
-          Join 200+ hiring teams who will use SocketAI to revolutionize their recruitment process with Corporate
-          Futurism.
+          Scale Faster, Hire Smarter — join 200+ hiring teams who will use SocketAI to revolutionize their recruitment
+          process with Corporate Futurism.
         </p>
         <div className="mt-14 grid gap-8 lg:grid-cols-2">
           <div className="relative flex flex-col rounded-3xl border border-white/10 bg-zinc-900/40 p-8 backdrop-blur-sm">
@@ -238,8 +241,8 @@ export function AdvertisingHome() {
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
           <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">Get Early Access</h2>
           <p className="mt-4 text-lg text-zinc-300">
-            Join 200+ hiring teams and stop manually reviewing resumes. Join our waitlist for free early access to
-            SocketAI.
+            Scale Faster, Hire Smarter. Join 200+ hiring teams, stop manually reviewing resumes, and get free early
+            access to SocketAI on the waitlist.
           </p>
         </div>
       </section>
@@ -353,7 +356,9 @@ export function AdvertisingHome() {
 
       <footer className="border-t border-white/10 py-12 text-center text-sm text-zinc-500">
         <p>© {new Date().getFullYear()} SocketAI. All rights reserved.</p>
-        <p className="mt-2">Streamline Hiring with AI · Built for teams using the SocketHR app at sockethr.com</p>
+        <p className="mt-2">
+          Scale Faster, Hire Smarter · Built for teams using the SocketHR app at sockethr.com
+        </p>
       </footer>
     </>
   );

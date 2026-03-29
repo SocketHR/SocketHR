@@ -7,11 +7,11 @@ export function AdvertisingLayout() {
   return (
     <div className="min-h-screen bg-[#07060c] text-zinc-100 font-adv antialiased">
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.35]"
+        className="pointer-events-none fixed inset-0 opacity-[0.30]"
         style={{
           backgroundImage: `radial-gradient(ellipse 80% 50% at 50% -20%, rgba(120, 119, 198, 0.45), transparent),
-            radial-gradient(ellipse 60% 40% at 100% 50%, rgba(59, 130, 246, 0.12), transparent),
-            radial-gradient(ellipse 50% 30% at 0% 80%, rgba(236, 72, 153, 0.1), transparent)`,
+            radial-gradient(ellipse 42% 28% at 100% 50%, rgba(59, 130, 246, 0.05), transparent),
+            radial-gradient(ellipse 38% 22% at 0% 80%, rgba(236, 72, 153, 0.04), transparent)`,
         }}
       />
       <header className="relative z-20 border-b border-white/10 bg-[#07060c]/80 backdrop-blur-md sticky top-0">
