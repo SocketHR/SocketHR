@@ -46,6 +46,22 @@ function normalizeScoredArray(parsed) {
   return [];
 }
 
+/** Strip common Markdown so interview drafts work in plain-text email clients. */
+function plainTextEmailDraft(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  let s = raw.replace(/\r\n/g, "\n");
+  s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, "$1");
+  s = s.replace(/`([^`]+)`/g, "$1");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "$1");
+  s = s.replace(/__([^_]+)__/g, "$1");
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+  s = s.replace(/^#{1,6}\s+/gm, "");
+  s = s.replace(/~~([^~]+)~~/g, "$1");
+  s = s.replace(/\*([^*\n]+)\*/g, "$1");
+  s = s.replace(/(^|\s)_([^_\n]+)_(\s|$|[.,;:!?])/g, "$1$2$3");
+  return s.trim();
+}
+
 const app = express();
 app.use(
   cors({
@@ -236,6 +252,8 @@ app.post("/api/chat", async (req, res) => {
 
     const system = `You are a hiring assistant. A recruiter is asking about a specific candidate for a job opening. Answer accurately using only information from the candidate's resume data. Be concise and specific.
 
+You may use light Markdown in your replies for readability: **bold**, *italic*, and bullet or numbered lists. The recruiter's UI will render it.
+
 JOB: ${job.title}
 JOB DESCRIPTION: ${job.description}
 REQUIREMENTS: ${job.requirements}
@@ -280,12 +298,17 @@ Mention 1-2 specific things from their background that impressed the team: ${(se
 
 Ask them to reply to schedule a 30-minute intro call. Sign off as "The Hiring Team at [Company]".
 
-Write only the email body, no subject line.`;
+Write only the email body, no subject line.
 
-    const draft = await chatCompletion([{ role: "user", content: prompt }], {
+IMPORTANT: The recruiter will paste this into a plain-text email (mailto). Email clients will NOT render Markdown or HTML. Output PLAIN TEXT only:
+- Do not use **asterisks**, _underscores_, # headings, backticks, bullet markdown (- or * at line starts as markup), or [link](url) syntax.
+- Use normal paragraphs, line breaks, and capitalization for emphasis instead.`;
+
+    const rawDraft = await chatCompletion([{ role: "user", content: prompt }], {
       maxTokens: 800,
       temperature: 0.5,
     });
+    const draft = plainTextEmailDraft(rawDraft);
     res.json({ draft });
   } catch (e) {
     console.error(e);

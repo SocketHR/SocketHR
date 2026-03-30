@@ -9,6 +9,9 @@ import {
   type DragEvent,
 } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import type { Components } from "react-markdown";
 import { DEFAULT_API_BASE, useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
 
 const RECRUITER_LOADING_TIPS = [
@@ -31,6 +34,44 @@ function buildInterviewMailto(opts: { to?: string; subject: string; body: string
   const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
   const to = opts.to?.trim() ?? "";
   return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
+}
+
+const assistantMarkdownComponents: Components = {
+  p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="my-1 list-disc space-y-0.5 pl-4">{children}</ul>,
+  ol: ({ children }) => <ol className="my-1 list-decimal space-y-0.5 pl-4">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      className="text-accent underline underline-offset-2"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  ),
+  pre: ({ children }) => (
+    <pre className="my-1 overflow-x-auto rounded-lg bg-paper-line/30 p-2 font-mono text-[12px] text-ink">{children}</pre>
+  ),
+  code: ({ className, children }) =>
+    className ? (
+      <code className={className}>{children}</code>
+    ) : (
+      <code className="rounded bg-paper-line/40 px-1 font-mono text-[12px] text-ink">{children}</code>
+    ),
+};
+
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <div className="assistant-md [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+      <ReactMarkdown remarkPlugins={[remarkBreaks]} components={assistantMarkdownComponents}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
@@ -637,7 +678,7 @@ export function HiringApp() {
                       : "self-start bg-paper-line/20 text-ink-muted"
                   }`}
                 >
-                  {m.content}
+                  {m.role === "user" ? m.content : <AssistantMarkdown content={m.content} />}
                 </div>
               ))}
               {chatLoading && <div className="self-start"><Spinner label="Thinking…" /></div>}
