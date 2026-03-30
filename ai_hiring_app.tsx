@@ -29,6 +29,14 @@ const RECRUITER_LOADING_TIPS = [
   "Tip: Hiring is a forecast. Look for patterns across roles, not one shiny bullet.",
 ];
 
+/** Match server: trim, lowercase, collapse internal whitespace. */
+function normalizeJobTitleClient(title: string) {
+  return String(title || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 function buildInterviewMailto(opts: { to?: string; subject: string; body: string }): string {
   // Use encodeURIComponent (spaces → %20), not URLSearchParams (+), so mail clients show real spaces.
   const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
@@ -211,6 +219,27 @@ export function HiringApp() {
     [apiBase]
   );
 
+  const getJson = useCallback(
+    async (path: string) => {
+      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
+      const base = apiBase.replace(/\/$/, "");
+      const res = await fetch(`${base}${path}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
+      return data;
+    },
+    [apiBase]
+  );
+
   const [page, setPage] = useState("home");
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
@@ -229,6 +258,12 @@ export function HiringApp() {
   const [emailState, setEmailState] = useState("idle");
   const [dragging, setDragging] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  type SavedListing = { jobId: string; title: string; candidateCount: number; updatedAt: string };
+  const [savedListings, setSavedListings] = useState<SavedListing[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
+  const [jobTitleDuplicateHint, setJobTitleDuplicateHint] = useState("");
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -258,6 +293,68 @@ export function HiringApp() {
     if (pendingNav) { pendingNav(); setPendingNav(null); }
     else setPage(candidates.length ? "results" : "home");
   }, [isLoggedIn, pendingNav, candidates.length]);
+
+  const refreshSavedListings = useCallback(async () => {
+    if (!isLoggedIn) {
+      setSavedListings([]);
+      return;
+    }
+    setListingsLoading(true);
+    try {
+      const data = await getJson("/api/jobs");
+      const jobs = (data as { jobs?: SavedListing[] }).jobs;
+      setSavedListings(Array.isArray(jobs) ? jobs : []);
+    } catch {
+      setSavedListings([]);
+    }
+    setListingsLoading(false);
+  }, [getJson, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setSavedListings([]);
+      return;
+    }
+    if (page !== "home") return;
+    void refreshSavedListings();
+  }, [isLoggedIn, page, refreshSavedListings]);
+
+  function resetNewListingWizard() {
+    setActiveJobId(null);
+    setJob({ title: "", description: "", requirements: "", culture: "" });
+    setResumeFiles([]);
+    setCandidates([]);
+    setSelected(null);
+    setChat([]);
+    setChatInput("");
+    setEmailDraft("");
+    setEmailState("idle");
+    setJobTitleDuplicateHint("");
+  }
+
+  async function openSavedListing(jobId: string) {
+    try {
+      const data = (await getJson(`/api/jobs/${encodeURIComponent(jobId)}`)) as {
+        jobId: string;
+        job: { title: string; description: string; requirements: string; culture: string };
+        candidates: typeof candidates;
+      };
+      setJob(data.job);
+      setCandidates(data.candidates);
+      setActiveJobId(data.jobId);
+      setSelected(null);
+      setChat([]);
+      setChatInput("");
+      setEmailDraft("");
+      setEmailState("idle");
+      setResumeFiles([]);
+      setPage("results");
+      void refreshSavedListings();
+    } catch (e) {
+      console.error(e);
+      alert("Could not open listing: " + (e as Error).message);
+    }
+  }
 
   async function handleFileSelect(
     e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
@@ -293,18 +390,55 @@ export function HiringApp() {
   async function analyzeResumes() {
     if (!resumeFiles.length) return alert("Please upload at least one resume.");
     setLoading(true);
-    setCandidates([]);
+    if (!activeJobId) setCandidates([]);
     try {
-      const { candidates: merged, storage } = await postJson("/api/analyze", {
+      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
+      const base = apiBase.replace(/\/$/, "");
+      const body = {
         job,
         resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
+        ...(activeJobId ? { existingJobId: activeJobId } : {}),
+      };
+      const res = await fetch(`${base}/api/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
       });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        existingJobId?: string;
+        candidates?: typeof candidates;
+        storage?: { skippedCount?: number };
+        jobId?: string;
+      };
+      if (res.status === 409) {
+        alert(
+          data.error ||
+            "You already have a listing for this title. Open it from the home screen to add résumés."
+        );
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || `Analyze failed (${res.status})`);
+      const merged = data.candidates ?? [];
       setCandidates(merged);
-      const skippedCount = Number((storage as { skippedCount?: number } | undefined)?.skippedCount || 0);
+      if (typeof data.jobId === "string") setActiveJobId(data.jobId);
+      const skippedCount = Number(data.storage?.skippedCount || 0);
       if (skippedCount > 0) {
         alert(`${skippedCount} resume(s) were ranked but not stored because no applicant email was detected.`);
       }
+      setResumeFiles([]);
       setPage("results");
+      void refreshSavedListings();
     } catch (err) {
       console.error(err);
       alert("Analysis failed: " + (err as Error).message);
@@ -378,9 +512,37 @@ export function HiringApp() {
           <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
             Add resumes, get ranked candidates with scores and summaries — then dig in with interview tools.
           </p>
-          <button type="button" onClick={() => setPage("job")} className={`mt-10 px-7 py-3 ${btnPrimary}`}>
+          <button
+            type="button"
+            onClick={() => {
+              resetNewListingWizard();
+              setPage("job");
+            }}
+            className={`mt-10 px-7 py-3 ${btnPrimary}`}
+          >
             Create job listing
           </button>
+          {isLoggedIn && (listingsLoading || savedListings.length > 0) && (
+            <div className="mt-14 w-full max-w-md">
+              {listingsLoading && savedListings.length === 0 ? (
+                <p className="font-ui text-sm text-ink-faint">Loading…</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {savedListings.map((row) => (
+                    <li key={row.jobId}>
+                      <button
+                        type="button"
+                        onClick={() => void openSavedListing(row.jobId)}
+                        className="w-full rounded-lg py-2 text-left text-xl font-bold leading-snug tracking-tight text-ink-muted transition-colors duration-150 hover:bg-paper-line/15 hover:text-ink sm:text-2xl"
+                      >
+                        {row.title || "Untitled role"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -422,7 +584,18 @@ export function HiringApp() {
           <div className="mt-8 flex flex-col gap-5">
             <div>
               <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job title <span className="text-accent/60">*</span></label>
-              <input className={inputClass} placeholder="e.g. Senior Software Engineer" value={job.title} onChange={(e) => setJob({ ...job, title: e.target.value })} />
+              <input
+                className={inputClass}
+                placeholder="e.g. Senior Software Engineer"
+                value={job.title}
+                onChange={(e) => {
+                  setJobTitleDuplicateHint("");
+                  setJob({ ...job, title: e.target.value });
+                }}
+              />
+              {jobTitleDuplicateHint ? (
+                <p className="mt-2 font-ui text-sm text-amber-800/90">{jobTitleDuplicateHint}</p>
+              ) : null}
             </div>
             <div>
               <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job description <span className="text-accent/60">*</span></label>
@@ -439,7 +612,21 @@ export function HiringApp() {
             <button
               type="button"
               disabled={!job.title || !job.description || !job.requirements}
-              onClick={() => setPage("upload")}
+              onClick={() => {
+                const norm = normalizeJobTitleClient(job.title);
+                if (
+                  isLoggedIn &&
+                  !activeJobId &&
+                  savedListings.some((l) => normalizeJobTitleClient(l.title) === norm)
+                ) {
+                  setJobTitleDuplicateHint(
+                    "You already have a listing for this title. Open it from the home screen to add résumés."
+                  );
+                  return;
+                }
+                setJobTitleDuplicateHint("");
+                setPage("upload");
+              }}
               className={`mt-1 py-3 ${btnPrimary}`}
             >
               Continue
@@ -509,7 +696,13 @@ export function HiringApp() {
           )}
 
           <div className="mt-8 flex gap-3">
-            <button type="button" onClick={() => setPage("job")} className={`flex-1 py-2.5 ${btnSecondary}`}>← Back</button>
+            <button
+              type="button"
+              onClick={() => (activeJobId ? setPage("results") : setPage("job"))}
+              className={`flex-1 py-2.5 ${btnSecondary}`}
+            >
+              ← Back
+            </button>
             <button type="button" disabled={loading || !resumeFiles.length} onClick={analyzeResumes} className={`flex-1 py-2.5 ${btnPrimary}`}>
               {loading ? "Analyzing…" : `Analyze ${resumeFiles.length} résumé(s)`}
             </button>

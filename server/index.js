@@ -3,7 +3,17 @@ import cors from "cors";
 import { randomUUID } from "crypto";
 import { jwtVerify } from "jose";
 import { chatCompletion } from "./lmstudio.js";
-import { saveJobSubmission, saveResults, saveStoredResumes } from "./storage.js";
+import {
+  saveJobSubmission,
+  saveResults,
+  saveStoredResumes,
+  normalizeJobTitle,
+  getJobIdForNormalizedTitle,
+  registerTitle,
+  listJobsForUser,
+  loadJobBundle,
+  resolveJobDir,
+} from "./storage.js";
 import { resumeToText } from "./resumeText.js";
 import {
   isWaitlistSmtpConfigured,
@@ -44,6 +54,101 @@ function normalizeScoredArray(parsed) {
     if ("index" in o) return [o];
   }
   return [];
+}
+
+function maxCandidateId(candidates) {
+  let m = -1;
+  for (const c of candidates) {
+    const id = c?.id;
+    if (typeof id === "number" && Number.isFinite(id)) m = Math.max(m, id);
+  }
+  return m;
+}
+
+/** @param {Array<{ name: string, base64: string, type?: string }>} resumes */
+async function extractResumeFields(resumes) {
+  const extracted = [];
+  for (let i = 0; i < resumes.length; i++) {
+    const f = resumes[i];
+    const resumeText = await resumeToText(f.base64, f.type || "", f.name);
+
+    const userPrompt = `Extract the following fields from this resume text as a single JSON object. Respond ONLY with raw JSON, no markdown.
+
+Resume text:
+${resumeText}
+
+Fields:
+- name (string, "Unknown Candidate ${i + 1}" if missing)
+- email (string, "" if missing)
+- phone (string, "" if missing)
+- years_experience (number, estimate)
+- skills (array of strings, top 8)
+- education (string, highest degree + institution)
+- recent_role (string, most recent title + company)
+- raw_summary (2-3 sentence background narrative)`;
+
+    const raw = await chatCompletion([{ role: "user", content: userPrompt }], {
+      maxTokens: 1500,
+      temperature: 0.2,
+    });
+    extracted.push(safeParseJSON(raw));
+  }
+  return extracted;
+}
+
+/**
+ * @param {object} job
+ * @param {unknown[]} extracted
+ */
+async function scoreExtractedForJob(job, extracted) {
+  const scoringPrompt = `You are an expert recruiter. Score each candidate for the following job. Return ONLY a raw JSON array, no markdown.
+
+JOB TITLE: ${job.title}
+JOB DESCRIPTION: ${job.description}
+REQUIREMENTS: ${job.requirements}
+CULTURE & FIT: ${job.culture || ""}
+
+CANDIDATES:
+${extracted.map((c, i) => `Candidate ${i} (index ${i}): ${JSON.stringify(c)}`).join("\n")}
+
+For each candidate return:
+- index (0-based, matching input order)
+- score (integer 1-10, be discriminating — use the full range)
+- score_rationale (1 sentence explaining the score)
+- strengths (array of 3-5 specific bullets grounded in the resume)
+- weaknesses (array of 2-3 specific bullets grounded in the resume)
+- fit_summary (1 concise sentence on overall fit for THIS role)`;
+
+  const scoredRaw = await chatCompletion([{ role: "user", content: scoringPrompt }], {
+    maxTokens: 4096,
+    temperature: 0.3,
+  });
+  return normalizeScoredArray(safeParseJSON(scoredRaw));
+}
+
+/**
+ * @param {unknown[]} extracted
+ * @param {unknown[]} scored
+ * @param {Array<{ name: string }>} resumes
+ * @param {number} idOffset — first candidate id for index 0
+ */
+function buildCandidatesFromExtracted(extracted, scored, resumes, idOffset) {
+  const rows = extracted.map((c, i) => {
+    const s = scored.find((x) => x.index === i) || scored[i] || {};
+    return {
+      id: idOffset + i,
+      ...c,
+      fileName: resumes[i].name,
+      score: s.score ?? 5,
+      score_rationale: s.score_rationale || "",
+      strengths: s.strengths || [],
+      weaknesses: s.weaknesses || [],
+      fit_summary: s.fit_summary || "",
+      storedLocally: false,
+      storageWarning: "",
+    };
+  });
+  return rows.sort((a, b) => b.score - a.score);
 }
 
 /** Strip common Markdown so interview drafts work in plain-text email clients. */
@@ -136,91 +241,127 @@ app.post("/api/waitlist", async (req, res) => {
 });
 
 /**
+ * GET /api/jobs — list saved job listings for this uploader (by title index).
+ */
+app.get("/api/jobs", async (req, res) => {
+  try {
+    const auth = await getAuthFromRequest(req);
+    const jobs = await listJobsForUser(auth.email);
+    res.json({ jobs });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Failed to list jobs" });
+  }
+});
+
+/**
+ * GET /api/jobs/:jobId — load job + candidates for results UI.
+ */
+app.get("/api/jobs/:jobId", async (req, res) => {
+  try {
+    const auth = await getAuthFromRequest(req);
+    const bundle = await loadJobBundle(auth.email, req.params.jobId);
+    if (!bundle) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    const j = bundle.job;
+    res.json({
+      jobId: req.params.jobId,
+      job: {
+        title: j.title ?? "",
+        description: j.description ?? "",
+        requirements: j.requirements ?? "",
+        culture: j.culture ?? "",
+      },
+      candidates: bundle.candidates,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Failed to load job" });
+  }
+});
+
+/**
  * POST /api/analyze
- * body: { job: { title, description, requirements, culture }, resumes: [{ name, base64, type }] }
+ * body: { job: { title, description, requirements, culture }, resumes: [{ name, base64, type }], existingJobId?: string }
  */
 app.post("/api/analyze", async (req, res) => {
   try {
     const auth = await getAuthFromRequest(req);
+    const uploaderId = auth.email;
 
-    const { job, resumes } = req.body || {};
+    const { job, resumes, existingJobId } = req.body || {};
     if (!job || !resumes?.length) {
       return res.status(400).json({ error: "Missing job or resumes" });
     }
 
-    const jobId = randomUUID();
-    const uploaderId = auth.email;
-    await saveJobSubmission(jobId, uploaderId, job, resumes);
+    const existingId = typeof existingJobId === "string" ? existingJobId.trim() : "";
 
-    const extracted = [];
+    if (existingId) {
+      if (!resolveJobDir(uploaderId, existingId)) {
+        return res.status(400).json({ error: "Invalid job id" });
+      }
+      const bundle = await loadJobBundle(uploaderId, existingId);
+      if (!bundle) {
+        return res.status(404).json({ error: "Job not found" });
+      }
 
-    for (let i = 0; i < resumes.length; i++) {
-      const f = resumes[i];
-      const resumeText = await resumeToText(f.base64, f.type || "", f.name);
+      const normStored = normalizeJobTitle(bundle.job.title);
+      const canonicalId = await getJobIdForNormalizedTitle(uploaderId, normStored);
+      if (canonicalId !== existingId) {
+        return res.status(403).json({ error: "Job does not match your listings" });
+      }
 
-      const userPrompt = `Extract the following fields from this resume text as a single JSON object. Respond ONLY with raw JSON, no markdown.
+      const jobOnDisk = {
+        title: bundle.job.title ?? "",
+        description: bundle.job.description ?? "",
+        requirements: bundle.job.requirements ?? "",
+        culture: bundle.job.culture ?? "",
+      };
 
-Resume text:
-${resumeText}
+      const extracted = await extractResumeFields(resumes);
+      const scored = await scoreExtractedForJob(jobOnDisk, extracted);
+      const startId = maxCandidateId(bundle.candidates) + 1;
+      const newCandidates = buildCandidatesFromExtracted(extracted, scored, resumes, startId);
 
-Fields:
-- name (string, "Unknown Candidate ${i + 1}" if missing)
-- email (string, "" if missing)
-- phone (string, "" if missing)
-- years_experience (number, estimate)
-- skills (array of strings, top 8)
-- education (string, highest degree + institution)
-- recent_role (string, most recent title + company)
-- raw_summary (2-3 sentence background narrative)`;
-
-      const raw = await chatCompletion([{ role: "user", content: userPrompt }], {
-        maxTokens: 1500,
-        temperature: 0.2,
+      const storage = await saveStoredResumes(existingId, uploaderId, resumes, extracted);
+      const newWithStorage = newCandidates.map((candidate) => {
+        const batchIndex = candidate.id - startId;
+        return {
+          ...candidate,
+          storedLocally: Boolean(storage.storedByIndex[batchIndex]),
+          storageWarning: storage.skippedByIndex[batchIndex] || "",
+        };
       });
-      extracted.push(safeParseJSON(raw));
+
+      const merged = [...bundle.candidates, ...newWithStorage].sort((a, b) => b.score - a.score);
+
+      await saveResults(existingId, uploaderId, { job: jobOnDisk, candidates: merged, storage });
+
+      return res.json({ jobId: existingId, candidates: merged, storage });
     }
 
-    const scoringPrompt = `You are an expert recruiter. Score each candidate for the following job. Return ONLY a raw JSON array, no markdown.
+    const norm = normalizeJobTitle(job.title);
+    if (!norm) {
+      return res.status(400).json({ error: "Job title is required" });
+    }
 
-JOB TITLE: ${job.title}
-JOB DESCRIPTION: ${job.description}
-REQUIREMENTS: ${job.requirements}
-CULTURE & FIT: ${job.culture || ""}
+    const duplicateId = await getJobIdForNormalizedTitle(uploaderId, norm);
+    if (duplicateId) {
+      return res.status(409).json({
+        error:
+          "You already have a listing for this title. Open it from the home screen to add résumés.",
+        code: "DUPLICATE_TITLE",
+        existingJobId: duplicateId,
+      });
+    }
 
-CANDIDATES:
-${extracted.map((c, i) => `Candidate ${i} (index ${i}): ${JSON.stringify(c)}`).join("\n")}
+    const jobId = randomUUID();
+    await saveJobSubmission(jobId, uploaderId, job, resumes);
 
-For each candidate return:
-- index (0-based, matching input order)
-- score (integer 1-10, be discriminating — use the full range)
-- score_rationale (1 sentence explaining the score)
-- strengths (array of 3-5 specific bullets grounded in the resume)
-- weaknesses (array of 2-3 specific bullets grounded in the resume)
-- fit_summary (1 concise sentence on overall fit for THIS role)`;
-
-    const scoredRaw = await chatCompletion([{ role: "user", content: scoringPrompt }], {
-      maxTokens: 4096,
-      temperature: 0.3,
-    });
-    const scored = normalizeScoredArray(safeParseJSON(scoredRaw));
-
-    const candidates = extracted
-      .map((c, i) => {
-        const s = scored.find((x) => x.index === i) || scored[i] || {};
-        return {
-          id: i,
-          ...c,
-          fileName: resumes[i].name,
-          score: s.score ?? 5,
-          score_rationale: s.score_rationale || "",
-          strengths: s.strengths || [],
-          weaknesses: s.weaknesses || [],
-          fit_summary: s.fit_summary || "",
-          storedLocally: false,
-          storageWarning: "",
-        };
-      })
-      .sort((a, b) => b.score - a.score);
+    const extracted = await extractResumeFields(resumes);
+    const scored = await scoreExtractedForJob(job, extracted);
+    const candidates = buildCandidatesFromExtracted(extracted, scored, resumes, 0);
 
     const storage = await saveStoredResumes(jobId, uploaderId, resumes, extracted);
     const candidatesWithStorage = candidates.map((candidate) => ({
@@ -230,6 +371,7 @@ For each candidate return:
     }));
 
     await saveResults(jobId, uploaderId, { job, candidates: candidatesWithStorage, storage });
+    await registerTitle(uploaderId, norm, jobId);
 
     res.json({ jobId, candidates: candidatesWithStorage, storage });
   } catch (e) {
