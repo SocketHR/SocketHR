@@ -61,7 +61,9 @@ app.use(express.json({ limit: "50mb" }));
 
 async function getAuthFromRequest(req) {
   if (!AUTH_SECRET) {
-    const err = new Error("Missing AUTH_SECRET on API server");
+    const err = new Error(
+      "Missing AUTH_SECRET on API server. In server/.env set AUTH_SECRET to the same value as NEXTAUTH_SECRET on Vercel, then restart (npm run server)."
+    );
     err.statusCode = 500;
     throw err;
   }
@@ -87,7 +89,11 @@ async function getAuthFromRequest(req) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "sockethr-server" });
+  res.json({
+    ok: true,
+    service: "sockethr-server",
+    authConfigured: Boolean(AUTH_SECRET),
+  });
 });
 
 /**
@@ -291,4 +297,9 @@ app.listen(PORT, HOST, () => {
   console.log(`SocketHR server http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`);
   console.log(`LM Studio: ${process.env.LM_STUDIO_BASE_URL || "http://127.0.0.1:1234/v1"}`);
   console.log(`Model: ${process.env.LM_STUDIO_MODEL || "openai/gpt-oss-20b"}`);
+  if (!AUTH_SECRET) {
+    console.warn(
+      "[sockethr-server] AUTH_SECRET is unset. Add AUTH_SECRET=<same as Vercel NEXTAUTH_SECRET> to server/.env and restart, or POST /api/analyze will fail."
+    );
+  }
 });
