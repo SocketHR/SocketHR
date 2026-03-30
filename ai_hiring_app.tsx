@@ -251,10 +251,6 @@ export function HiringApp() {
 
   async function analyzeResumes() {
     if (!resumeFiles.length) return alert("Please upload at least one resume.");
-    if (!isLoggedIn) {
-      setPage("login");
-      return alert("Sign in with Google to analyze resumes.");
-    }
     setLoading(true);
     setCandidates([]);
     try {
@@ -316,7 +312,7 @@ export function HiringApp() {
     window.location.href = href;
   }
 
-  const cutoff = Math.max(1, Math.ceil(candidates.length * (candidates.length <= 10 ? 0.4 : 0.2)));
+  const cutoff = Math.max(1, Math.ceil(candidates.length / 2));
   const topCandidates = candidates.slice(0, cutoff);
 
   const inputClass =
@@ -358,7 +354,7 @@ export function HiringApp() {
         <div className={content} style={{ maxWidth: "24rem" }}>
           <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
           <div className="mt-8 flex flex-col gap-3">
-            <p className="font-ui text-sm text-ink-muted">Continue with your Google account to access resume analysis.</p>
+            <p className="font-ui text-sm text-ink-muted">Sign in with Google to see the full ranked list — including the lower half of candidates.</p>
             <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Continue with Google</button>
           </div>
           <button
@@ -522,7 +518,7 @@ export function HiringApp() {
           {!isLoggedIn && candidates.length > cutoff && (
             <div className="mt-10">
               <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`px-6 py-2.5 ${btnPrimary}`}>
-                View all {candidates.length} — sign in
+                Sign in to see the other {candidates.length - cutoff} candidate{candidates.length - cutoff === 1 ? "" : "s"}
               </button>
             </div>
           )}
