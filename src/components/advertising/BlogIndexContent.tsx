@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SOCKETAI_BLOG_POSTS } from "../../data/socketaiBlogPosts";
+import { SOCKETHR_BLOG_POSTS } from "../../data/sockethrBlogPosts";
 
 function formatDate(iso: string) {
   try {
@@ -17,12 +17,12 @@ export function BlogIndexContent() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:py-24">
       <p className="font-display text-xs font-bold uppercase tracking-[0.35em] text-cyan-400">Blog</p>
-      <h1 className="mt-4 font-display text-4xl font-bold text-white sm:text-5xl">SocketAI insights</h1>
+      <h1 className="mt-4 font-display text-4xl font-bold text-white sm:text-5xl">Sockethr insights</h1>
       <p className="mt-4 text-lg text-zinc-400">
         Streamline your recruitment process with ideas on AI hiring, waitlists, and product updates.
       </p>
       <ul className="mt-14 flex flex-col gap-10">
-        {SOCKETAI_BLOG_POSTS.map((post) => (
+        {SOCKETHR_BLOG_POSTS.map((post) => (
           <li key={post.slug}>
             <article className="group rounded-2xl border border-white/10 bg-zinc-900/40 p-8 transition hover:border-cyan-500/40">
               <time className="text-sm text-zinc-500">{formatDate(post.date)}</time>

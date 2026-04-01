@@ -21,7 +21,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#07060c]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <Link href="/advertising" className="font-display text-xl font-bold tracking-tight text-white sm:text-2xl">
-            Socket<span className="text-cyan-400">AI</span>
+            Socket<span className="text-cyan-400">hr</span>
           </Link>
           <nav className="flex items-center gap-1 sm:gap-3">
             <Link

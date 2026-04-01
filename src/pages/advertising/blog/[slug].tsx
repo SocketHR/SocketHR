@@ -1,5 +1,5 @@
 import type { GetServerSideProps } from "next";
-import { getPostBySlug } from "../../../data/socketaiBlogPosts";
+import { getPostBySlug } from "../../../data/sockethrBlogPosts";
 import { BlogPostContent } from "../../../components/advertising/BlogPostContent";
 import { SiteFrame } from "../../../components/advertising/SiteFrame";
 

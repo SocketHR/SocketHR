@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPostBySlug, type BlogBlock } from "../../data/socketaiBlogPosts";
+import { getPostBySlug, type BlogBlock } from "../../data/sockethrBlogPosts";
 
 function formatDate(iso: string) {
   try {

@@ -108,7 +108,7 @@ export function AdvertisingHomeContent() {
           Choose Your Path to Efficiency
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-center text-zinc-400">
-          Scale Faster, Hire Smarter — join 200+ hiring teams who will use SocketAI to revolutionize their recruitment
+          Scale Faster, Hire Smarter — join 200+ hiring teams who will use Sockethr to revolutionize their recruitment
           process with Corporate Futurism.
         </p>
         <div className="mt-14 grid gap-8 lg:grid-cols-2">
@@ -163,7 +163,7 @@ export function AdvertisingHomeContent() {
               misses the best talent. The traditional process is slow, biased, and exhausting for hiring teams.
             </p>
             <p className="text-lg leading-relaxed text-zinc-300">
-              SocketAI shifts the paradigm. Our AI engine automatically ranks every applicant in minutes, identifying
+              Sockethr shifts the paradigm. Our AI engine automatically ranks every applicant in minutes, identifying
               top-tier candidates with precision. By liquidating the manual workload, we empower you to focus on what
               matters: building your dream team.
             </p>
@@ -177,7 +177,7 @@ export function AdvertisingHomeContent() {
           {[
             { title: "Automated Applicant Ranking", body: "Our AI instantly analyzes hundreds of resumes to rank candidates based on your specific role requirements." },
             { title: "Instant Response System", body: "Automatically engage with every applicant within minutes, ensuring a premium experience for every candidate." },
-            { title: "Indeed Integration", body: "SocketAI plugs directly into your Indeed workflow, managing your inbox without you lifting a finger." },
+            { title: "Indeed Integration", body: "Sockethr plugs directly into your Indeed workflow, managing your inbox without you lifting a finger." },
           ].map((item) => (
             <div key={item.title} className="rounded-2xl border border-white/10 bg-zinc-900/30 p-8 transition hover:border-cyan-500/30">
               <h3 className="font-display text-lg font-bold text-white">{item.title}</h3>
@@ -192,7 +192,7 @@ export function AdvertisingHomeContent() {
           <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">Get Early Access</h2>
           <p className="mt-4 text-lg text-zinc-300">
             Scale Faster, Hire Smarter. Join 200+ hiring teams, stop manually reviewing resumes, and get free early
-            access to SocketAI on the waitlist.
+            access to Sockethr on the waitlist.
           </p>
         </div>
       </section>
@@ -254,7 +254,7 @@ export function AdvertisingHomeContent() {
       </section>
 
       <footer className="border-t border-white/10 py-12 text-center text-sm text-zinc-500">
-        <p>© {new Date().getFullYear()} SocketAI. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} Sockethr. All rights reserved.</p>
         <p className="mt-2">Scale Faster, Hire Smarter · Built for teams using the SocketHR app at sockethr.com</p>
       </footer>
     </>
