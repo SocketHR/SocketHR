@@ -1,151 +1,187 @@
 "use client";
 
-import {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  type ChangeEvent,
-  type DragEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import type { Components } from "react-markdown";
 import { DEFAULT_API_BASE, useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
 
-const RECRUITER_LOADING_TIPS = [
-  "Tip: Ask how they handled their biggest failure — résumés rarely tell that story.",
-  "Tip: The best hires often explain trade-offs, not just victories.",
-  "Tip: If they ask great questions in the screen, note it. Curiosity scales.",
-  "Tip: Culture fit isn't \"same personality\" — it's values and how they disagree.",
-  "Tip: Red flag: vague ownership on team projects. Dig for what they actually shipped.",
-  "Tip: Compare their stories to the job's hardest day, not the job description buzzwords.",
-  "Tip: Reference checks: ask what they'd change if they hired this person again.",
-  "Tip: Strong candidates can explain why they left without trashing the last place.",
-  "Tip: Time-box take-home work — respect for your process starts in the interview.",
-  "Tip: Note who follows up thoughtfully. It predicts how they'll treat candidates you pass on.",
-  "Tip: Pair a technical question with \"what would you do if you were stuck for two days?\"",
-  "Tip: Hiring is a forecast. Look for patterns across roles, not one shiny bullet.",
+type JobSpec = { title: string; description: string; requirements: string; culture: string };
+type SavedListing = { jobId: string; title: string; candidateCount: number; updatedAt: string };
+type SimulationQuestion = {
+  type: "case_unfolding" | "prioritization" | "multiple_choice" | "short_answer" | "written";
+  scenario?: string;
+  question?: string;
+  options?: string[];
+  items?: string[];
+  phase1_situation?: string;
+  phase1_question?: string;
+  phase2_reveal?: string;
+  phase2_question?: string;
+};
+type Candidate = {
+  id?: string | number;
+  name?: string;
+  email?: string;
+  phone?: string;
+  recent_role?: string;
+  raw_summary?: string;
+  education?: string;
+  skills?: string[];
+  score?: number;
+  resumeScore?: number;
+  simulationScore?: number | null;
+  score_rationale?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  fit_summary?: string;
+  testStatus?: "pending" | "invited" | "completed";
+  hireStatus?: "none" | "considering" | "hired" | "rejected";
+  generatedQuestions?: SimulationQuestion[];
+  simulationReport?: Record<string, unknown> | null;
+  assessmentStrengths?: string[];
+  assessmentGaps?: string[];
+  assessmentSummary?: string;
+  coachingNote?: string;
+  questionBreakdown?: Array<{ questionId?: number; score?: number; feedback?: string }>;
+  manualRank?: number | null;
+  interviewNotes?: string;
+  interviewDate?: string;
+  interviewTime?: string;
+  interviewSummary?: string;
+  integrityFlag?: boolean;
+};
+
+const loadingTips = [
+  "Reading resumes and extracting candidate evidence.",
+  "Scoring candidates against the actual role requirements.",
+  "Looking for signal beyond keyword matches.",
+  "Building a ranked pipeline you can inspect.",
 ];
 
-/** Match server: trim, lowercase, collapse internal whitespace. */
-function normalizeJobTitleClient(title: string) {
-  return String(title || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function buildInterviewMailto(opts: { to?: string; subject: string; body: string }): string {
-  // Use encodeURIComponent (spaces → %20), not URLSearchParams (+), so mail clients show real spaces.
-  const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
-  const to = opts.to?.trim() ?? "";
-  return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
-}
-
-const assistantMarkdownComponents: Components = {
+const markdownComponents: Components = {
   p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
   ul: ({ children }) => <ul className="my-1 list-disc space-y-0.5 pl-4">{children}</ul>,
   ol: ({ children }) => <ol className="my-1 list-decimal space-y-0.5 pl-4">{children}</ol>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="text-accent underline underline-offset-2"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  ),
-  pre: ({ children }) => (
-    <pre className="my-1 overflow-x-auto rounded-lg bg-paper-line/30 p-2 font-mono text-[12px] text-ink">{children}</pre>
-  ),
-  code: ({ className, children }) =>
-    className ? (
-      <code className={className}>{children}</code>
-    ) : (
-      <code className="rounded bg-paper-line/40 px-1 font-mono text-[12px] text-ink">{children}</code>
-    ),
 };
 
-function AssistantMarkdown({ content }: { content: string }) {
-  return (
-    <div className="assistant-md [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-      <ReactMarkdown remarkPlugins={[remarkBreaks]} components={assistantMarkdownComponents}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
+function safeArr(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((x) => String(x ?? "")).filter(Boolean);
+  if (typeof value === "string") return value.split("\n").map((x) => x.trim()).filter(Boolean);
+  return [];
 }
 
-// ── UI Primitives ─────────────────────────────────────────────────────────────
-function Spinner({ label = "Processing…" }: { label?: string }) {
+function safeScore(value: unknown, fallback = 5) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, Math.round(n))) : fallback;
+}
+
+function normalizeCandidate(candidate: Candidate): Candidate {
+  const resumeScore = safeScore(candidate.resumeScore ?? candidate.score);
+  const score = safeScore(candidate.score ?? resumeScore);
+  return {
+    ...candidate,
+    name: candidate.name || "Unknown",
+    score,
+    resumeScore,
+    simulationScore: candidate.simulationScore == null ? null : safeScore(candidate.simulationScore),
+    skills: safeArr(candidate.skills),
+    strengths: safeArr(candidate.strengths),
+    weaknesses: safeArr(candidate.weaknesses),
+    assessmentStrengths: safeArr(candidate.assessmentStrengths),
+    assessmentGaps: safeArr(candidate.assessmentGaps),
+    testStatus: candidate.testStatus || "pending",
+    hireStatus: candidate.hireStatus || "none",
+    generatedQuestions: Array.isArray(candidate.generatedQuestions) ? candidate.generatedQuestions : [],
+    questionBreakdown: Array.isArray(candidate.questionBreakdown) ? candidate.questionBreakdown : [],
+    simulationReport: candidate.simulationReport || null,
+    manualRank: candidate.manualRank ?? null,
+  };
+}
+
+function normalizeJobTitle(title: string) {
+  return String(title || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function buildMailto(opts: { to?: string; subject: string; body: string }) {
+  const to = opts.to?.trim() ?? "";
+  const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
+  return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
+}
+
+function Spinner({ label = "Processing..." }: { label?: string }) {
   return (
-    <div className="flex items-start gap-3 font-ui text-sm text-ink-muted">
-      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent/60" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <div className="flex items-center gap-3 font-ui text-sm text-ink-muted">
+      <svg className="h-4 w-4 animate-spin text-accent/70" viewBox="0 0 24 24" fill="none" aria-hidden>
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
       </svg>
-      <span key={label} className="tip-fade max-w-md text-left leading-snug">{label}</span>
+      <span>{label}</span>
     </div>
   );
 }
 
-function ScorePill({ score }: { score: number }) {
+function ScorePill({ score }: { score?: number | null }) {
+  if (score == null) return <span className="font-ui text-xs text-ink-faint">-</span>;
+  const s = safeScore(score);
   const style =
-    score >= 8
-      ? "bg-emerald-50/80 text-emerald-800"
-      : score >= 6
-        ? "bg-sky-50/80 text-sky-800"
-        : score >= 4
-          ? "bg-amber-50/80 text-amber-800"
-          : "bg-red-50/80 text-red-800";
-  return <span className={`rounded-full px-2.5 py-0.5 font-ui text-xs font-semibold tabular-nums ${style}`}>{score}/10</span>;
+    s >= 8 ? "bg-emerald-50 text-emerald-800" :
+    s >= 6 ? "bg-sky-50 text-sky-800" :
+    s >= 4 ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800";
+  return <span className={`rounded-full px-2.5 py-1 font-ui text-xs font-bold tabular-nums ${style}`}>{s}/10</span>;
 }
 
-/** Two-step flow: visual progress only (no “Step N of M” copy). */
-function WizardProgress({ step, total = 2 }: { step: number; total?: number }) {
-  const pct = (step / total) * 100;
+function StatusPill({ status }: { status?: Candidate["testStatus"] }) {
+  const labels = { pending: "Not tested", invited: "Invited", completed: "Tested" };
+  const style =
+    status === "completed" ? "bg-emerald-50 text-emerald-800" :
+    status === "invited" ? "bg-amber-50 text-amber-800" : "bg-paper-line/30 text-ink-faint";
+  return <span className={`rounded-full px-2.5 py-1 font-ui text-xs font-semibold ${style}`}>{labels[status || "pending"]}</span>;
+}
+
+function HireBadge({ status }: { status?: Candidate["hireStatus"] }) {
+  if (!status || status === "none") return null;
+  const style =
+    status === "hired" ? "bg-emerald-600 text-white" :
+    status === "rejected" ? "bg-red-50 text-red-800" : "bg-accent-soft text-accent";
+  return <span className={`rounded-full px-2.5 py-1 font-ui text-xs font-bold ${style}`}>{status}</span>;
+}
+
+function AssistantMarkdown({ content }: { content: string }) {
   return (
-    <div
-      className="mb-6"
-      role="progressbar"
-      aria-valuenow={step}
-      aria-valuemin={1}
-      aria-valuemax={total}
-      aria-label={`Step ${step} of ${total}`}
-    >
-      <div className="h-1 overflow-hidden rounded-full bg-paper-line/35">
-        <div
-          className="h-full rounded-full bg-accent/40 transition-[width] duration-500 ease-out"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
+    <ReactMarkdown remarkPlugins={[remarkBreaks]} components={markdownComponents}>
+      {content}
+    </ReactMarkdown>
   );
 }
 
-function Nav({
-  isLoggedIn,
+function AppNav({
+  loggedIn,
   userName,
+  onHome,
   onLogin,
   onLogout,
-  onHome,
-  apiBase = DEFAULT_API_BASE,
-  apiConfigLoaded = true,
+  onNewJob,
+  searchQuery,
+  setSearchQuery,
+  apiBase,
+  apiConfigLoaded,
 }: {
-  isLoggedIn: boolean;
+  loggedIn: boolean;
   userName?: string | null;
+  onHome: () => void;
   onLogin: () => void;
   onLogout: () => void;
-  onHome: () => void;
-  apiBase?: string;
-  apiConfigLoaded?: boolean;
+  onNewJob?: () => void;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  apiBase: string;
+  apiConfigLoaded: boolean;
 }) {
+  const [showSearch, setShowSearch] = useState(false);
   const showLocalApiWarning =
     apiConfigLoaded &&
     typeof window !== "undefined" &&
@@ -156,143 +192,342 @@ function Nav({
   return (
     <>
       {showLocalApiWarning && (
-        <div className="bg-amber-50/60 px-6 py-2.5 font-ui text-left text-xs text-amber-900/80 sm:px-10">
-          This site is configured to call a <strong>local</strong> API URL. Other devices cannot reach it.
-          Set <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">apiBase</code> in{" "}
-          <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">/runtime-config.json</code> to your public
-          HTTPS API.
+        <div className="bg-amber-50/70 px-6 py-2.5 font-ui text-xs text-amber-900 sm:px-10">
+          This site is configured to call a local API URL. Set apiBase in runtime-config.json for public access.
         </div>
       )}
-      <nav className="sticky top-0 z-10 flex items-center justify-between bg-paper/90 px-6 py-4 backdrop-blur-sm font-ui sm:px-10">
-        <button type="button" className="flex cursor-pointer items-center gap-2 text-left transition-opacity duration-150 hover:opacity-60" onClick={onHome}>
-          <span className="text-lg font-bold tracking-tight text-ink">SocketHR</span>
-        </button>
-        {isLoggedIn ? (
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-ink-muted sm:block">{userName || "Signed in"}</span>
-            <button type="button" onClick={onLogout} className="rounded-lg px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted">
-              Sign out
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onLogin}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-faint transition-all duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
-          >
-            Log in
+      <nav className="sticky top-0 z-20 flex items-center justify-between border-b border-paper-line/60 bg-paper/90 px-5 py-3 font-ui backdrop-blur sm:px-8">
+        <div className="flex min-w-0 items-center gap-4">
+          <button type="button" onClick={onHome} className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-sm font-black text-paper-card">S</span>
+            <span className="font-ui text-sm font-black tracking-tight text-ink">SocketHR</span>
           </button>
-        )}
+          <div className="hidden sm:block">
+            {showSearch ? (
+              <input
+                autoFocus
+                className="w-64 rounded-xl border border-paper-line bg-paper-card px-3 py-2 text-sm text-ink outline-none focus:border-accent/40"
+                placeholder="Search candidates..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onBlur={() => !searchQuery && setShowSearch(false)}
+              />
+            ) : (
+              <button type="button" onClick={() => setShowSearch(true)} className="rounded-lg px-2 py-1.5 text-xs text-ink-faint hover:bg-paper-line/25 hover:text-ink-muted">
+                Search
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {onNewJob && <button type="button" onClick={onNewJob} className="text-xs font-semibold text-accent hover:text-accent-hover">+ New job</button>}
+          {loggedIn ? (
+            <>
+              <span className="hidden text-xs text-ink-faint sm:block">{userName || "Signed in"}</span>
+              <button type="button" onClick={onLogout} className="text-xs text-ink-faint hover:text-ink">Sign out</button>
+            </>
+          ) : (
+            <button type="button" onClick={onLogin} className="text-xs font-semibold text-ink-muted hover:text-ink">Sign in</button>
+          )}
+        </div>
       </nav>
     </>
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
+function CandidatePortal({ token, apiBase }: { token: string; apiBase: string }) {
+  const [invite, setInvite] = useState<{ candidateName: string; jobTitle: string; questions: SimulationQuestion[]; answered?: boolean } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [step, setStep] = useState<"welcome" | "questions" | "done">("welcome");
+  const [currentQ, setCurrentQ] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [casePhase, setCasePhase] = useState(1);
+  const [caseAns1, setCaseAns1] = useState("");
+  const [caseAns2, setCaseAns2] = useState("");
+  const [ranking, setRanking] = useState<number[]>([]);
+  const [timeLeft, setTimeLeft] = useState(600);
+  const [submitting, setSubmitting] = useState(false);
+  const submitted = useRef(false);
+
+  useEffect(() => {
+    fetch(`${apiBase.replace(/\/$/, "")}/api/simulations/invite/${encodeURIComponent(token)}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok) {
+          setInvite(data);
+          if (data.answered) setStep("done");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    if (step !== "questions") return;
+    const id = window.setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          window.clearInterval(id);
+          void submitAnswers();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [step]);
+
+  useEffect(() => {
+    setCasePhase(1);
+    setCaseAns1("");
+    setCaseAns2("");
+    setRanking([]);
+  }, [currentQ]);
+
+  if (loading) {
+    return <div className="hiring-shell flex min-h-screen items-center justify-center"><Spinner label="Loading assessment..." /></div>;
+  }
+  if (!invite) {
+    return (
+      <div className="hiring-shell flex min-h-screen items-center justify-center px-4">
+        <div className="rounded-3xl border border-paper-line bg-paper-card p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold text-ink">Link not found</h1>
+          <p className="mt-2 font-ui text-sm text-ink-muted">This assessment link is invalid or expired.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const questions = invite.questions || [];
+  const q = questions[currentQ];
+  const mins = Math.floor(timeLeft / 60);
+  const secs = String(timeLeft % 60).padStart(2, "0");
+  const canProceed =
+    !q ? false :
+    q.type === "case_unfolding" ? casePhase === 2 && caseAns2.trim().length > 0 :
+    q.type === "prioritization" ? ranking.length === safeArr(q.items).length :
+    Boolean(answers[currentQ]);
+
+  function setCaseTwo(value: string) {
+    setCaseAns2(value);
+    setAnswers((prev) => ({
+      ...prev,
+      [currentQ]: `Phase 1 Response:\n${caseAns1}\n\nSituation Update: ${q?.phase2_reveal || ""}\n\nPhase 2 Response:\n${value}`,
+    }));
+  }
+
+  function toggleRank(index: number) {
+    const next = ranking.includes(index) ? ranking.filter((x) => x !== index) : [...ranking, index];
+    setRanking(next);
+    const items = safeArr(q?.items);
+    setAnswers((prev) => ({ ...prev, [currentQ]: next.map((i, r) => `${r + 1}. ${items[i]}`).join("\n") }));
+  }
+
+  async function submitAnswers() {
+    if (submitted.current || !invite) return;
+    submitted.current = true;
+    setSubmitting(true);
+    try {
+      await fetch(`${apiBase.replace(/\/$/, "")}/api/simulations/invite/${encodeURIComponent(token)}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+    } finally {
+      setSubmitting(false);
+      setStep("done");
+    }
+  }
+
+  return (
+    <div className="hiring-shell min-h-screen">
+      <div className="border-b border-paper-line/60 bg-paper/90 px-6 py-4 font-ui text-sm font-black text-ink">SocketHR Candidate Assessment</div>
+      <main className="mx-auto flex min-h-[calc(100vh-65px)] max-w-2xl items-center px-4 py-10">
+        {step === "welcome" && (
+          <section className="w-full rounded-3xl border border-paper-line bg-paper-card p-8 shadow-sm">
+            <h1 className="text-3xl font-bold tracking-tight text-ink">Hi, {invite.candidateName}</h1>
+            <p className="mt-3 font-ui text-sm leading-relaxed text-ink-muted">
+              You have one 10-minute job simulation for <span className="font-semibold text-accent">{invite.jobTitle}</span>.
+            </p>
+            <div className="mt-6 grid gap-3 font-ui text-sm text-ink-muted">
+              <p>10 minutes to complete.</p>
+              <p>Scenarios can change mid-challenge, so adapt as new information arrives.</p>
+              <p>Answer honestly. This is designed to show judgment, not memorization.</p>
+            </div>
+            <button type="button" onClick={() => setStep("questions")} className="mt-8 w-full rounded-2xl bg-accent px-5 py-3 font-ui text-sm font-black text-white hover:bg-accent-hover">
+              Begin simulation
+            </button>
+          </section>
+        )}
+        {step === "questions" && q && (
+          <section className="w-full rounded-3xl border border-paper-line bg-paper-card p-8 shadow-sm">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="font-ui text-xs font-semibold uppercase tracking-widest text-ink-faint">Question {currentQ + 1} of {questions.length}</p>
+                <div className="mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-paper-line">
+                  <div className="h-full rounded-full bg-accent/60" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
+                </div>
+              </div>
+              <p className="font-ui text-lg font-black tabular-nums text-accent">{mins}:{secs}</p>
+            </div>
+            {q.scenario && <p className="mb-4 rounded-2xl bg-paper-line/25 p-4 font-ui text-sm italic text-ink-muted">{q.scenario}</p>}
+            {q.type === "case_unfolding" && (
+              <div>
+                <p className="mb-2 font-ui text-xs font-black uppercase tracking-widest text-accent">Phase 1</p>
+                <p className="rounded-2xl bg-paper-line/25 p-4 font-ui text-sm text-ink-muted">{q.phase1_situation}</p>
+                <p className="mt-4 font-semibold text-ink">{q.phase1_question}</p>
+                <textarea rows={4} value={caseAns1} onChange={(e) => setCaseAns1(e.target.value)} disabled={casePhase === 2} className="mt-3 w-full rounded-2xl border border-paper-line bg-paper px-4 py-3 font-ui text-sm outline-none focus:border-accent/40 disabled:opacity-60" />
+                {casePhase === 1 && (
+                  <button type="button" disabled={!caseAns1.trim()} onClick={() => setCasePhase(2)} className="mt-4 w-full rounded-2xl border border-accent/25 px-4 py-3 font-ui text-sm font-bold text-accent disabled:opacity-40">
+                    Reveal next development
+                  </button>
+                )}
+                {casePhase === 2 && (
+                  <div className="mt-5">
+                    <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 font-ui text-sm text-amber-900">{q.phase2_reveal}</p>
+                    <p className="mt-4 font-semibold text-ink">{q.phase2_question}</p>
+                    <textarea rows={4} value={caseAns2} onChange={(e) => setCaseTwo(e.target.value)} className="mt-3 w-full rounded-2xl border border-paper-line bg-paper px-4 py-3 font-ui text-sm outline-none focus:border-accent/40" />
+                  </div>
+                )}
+              </div>
+            )}
+            {q.type === "multiple_choice" && (
+              <div>
+                <p className="font-semibold text-ink">{q.question}</p>
+                <div className="mt-4 grid gap-2">
+                  {safeArr(q.options).map((option) => (
+                    <label key={option} className={`flex cursor-pointer gap-3 rounded-2xl border p-3 font-ui text-sm ${answers[currentQ] === option ? "border-accent bg-accent-soft text-accent" : "border-paper-line text-ink-muted"}`}>
+                      <input type="radio" name={`q-${currentQ}`} checked={answers[currentQ] === option} onChange={() => setAnswers((prev) => ({ ...prev, [currentQ]: option }))} />
+                      {option}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(q.type === "short_answer" || q.type === "written") && (
+              <div>
+                <p className="font-semibold text-ink">{q.question}</p>
+                <textarea rows={6} value={answers[currentQ] || ""} onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQ]: e.target.value }))} className="mt-4 w-full rounded-2xl border border-paper-line bg-paper px-4 py-3 font-ui text-sm outline-none focus:border-accent/40" />
+              </div>
+            )}
+            {q.type === "prioritization" && (
+              <div>
+                <p className="font-semibold text-ink">{q.question}</p>
+                <p className="mt-1 font-ui text-xs text-ink-faint">Click items in the order you would tackle them.</p>
+                <div className="mt-4 grid gap-2">
+                  {safeArr(q.items).map((item, index) => {
+                    const rank = ranking.indexOf(index);
+                    return (
+                      <button key={item} type="button" onClick={() => toggleRank(index)} className={`flex items-center gap-3 rounded-2xl border p-3 text-left font-ui text-sm ${rank >= 0 ? "border-accent bg-accent-soft text-accent" : "border-paper-line text-ink-muted"}`}>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-paper-line/50 text-xs font-black">{rank >= 0 ? rank + 1 : "-"}</span>
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <button type="button" disabled={!canProceed || submitting} onClick={() => currentQ < questions.length - 1 ? setCurrentQ((x) => x + 1) : void submitAnswers()} className="mt-6 w-full rounded-2xl bg-accent px-5 py-3 font-ui text-sm font-black text-white hover:bg-accent-hover disabled:opacity-40">
+              {submitting ? "Submitting..." : currentQ < questions.length - 1 ? "Next" : "Submit"}
+            </button>
+          </section>
+        )}
+        {step === "done" && (
+          <section className="w-full rounded-3xl border border-paper-line bg-paper-card p-10 text-center shadow-sm">
+            <h1 className="text-3xl font-bold text-ink">All done, {invite.candidateName}.</h1>
+            <p className="mt-3 font-ui text-sm text-ink-muted">Your simulation has been submitted. The team will be in touch.</p>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}
+
 export function HiringApp() {
   const { apiBase, configLoaded: apiConfigLoaded } = useSockethrRuntimeConfig();
   const { data: session, status } = useSession();
   const isLoggedIn = status === "authenticated";
   const userName = session?.user?.name ?? session?.user?.email ?? null;
+  const [hashToken, setHashToken] = useState<string | null>(null);
 
-  const postJson = useCallback(
-    async (path: string, body: unknown) => {
-      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
-      const tokenJson = await tokenRes.json().catch(() => ({}));
-      const token =
-        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
-          ? (tokenJson as { token: string }).token
-          : "";
-      const base = apiBase.replace(/\/$/, "");
-      const res = await fetch(`${base}${path}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
-      return data;
-    },
-    [apiBase]
-  );
+  useEffect(() => {
+    const read = () => {
+      const match = window.location.hash.match(/[?&]?token=([a-z0-9-]+)/i);
+      setHashToken(match?.[1] || null);
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
 
-  const getJson = useCallback(
-    async (path: string) => {
-      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
-      const tokenJson = await tokenRes.json().catch(() => ({}));
-      const token =
-        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
-          ? (tokenJson as { token: string }).token
-          : "";
-      const base = apiBase.replace(/\/$/, "");
-      const res = await fetch(`${base}${path}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
-      return data;
-    },
-    [apiBase]
-  );
+  const getToken = useCallback(async () => {
+    const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+    const tokenJson = await tokenRes.json().catch(() => ({}));
+    return tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+      ? (tokenJson as { token: string }).token
+      : "";
+  }, []);
+
+  const apiFetch = useCallback(async (path: string, init: RequestInit = {}) => {
+    const token = await getToken();
+    const base = apiBase.replace(/\/$/, "");
+    const res = await fetch(`${base}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
+    return data;
+  }, [apiBase, getToken]);
 
   const [page, setPage] = useState("home");
-  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
-  const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
+  const [job, setJob] = useState<JobSpec>({ title: "", description: "", requirements: "", culture: "" });
   const [resumeFiles, setResumeFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [candidates, setCandidates] = useState<
-    { id?: string; name?: string; score?: number; recent_role?: string; fit_summary?: string; score_rationale?: string; skills?: string[]; strengths?: string[]; weaknesses?: string[]; email?: string; phone?: string }[]
-  >([]);
-  const [loadingTipIndex, setLoadingTipIndex] = useState(0);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [selected, setSelected] = useState<Candidate | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [savedListings, setSavedListings] = useState<SavedListing[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<(typeof candidates)[0] | null>(null);
+  const [loadingTipIndex, setLoadingTipIndex] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [atsFilter, setAtsFilter] = useState("all");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chat, setChat] = useState<{ role: string; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [emailDraft, setEmailDraft] = useState("");
   const [emailState, setEmailState] = useState("idle");
-  const [dragging, setDragging] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [manualRankInput, setManualRankInput] = useState("");
+  const [interviewNotes, setInterviewNotes] = useState("");
+  const [interviewDate, setInterviewDate] = useState("");
+  const [interviewTime, setInterviewTime] = useState("");
+  const [interviewScoring, setInterviewScoring] = useState(false);
+  const [showSimEditor, setShowSimEditor] = useState(false);
+  const [showSimReport, setShowSimReport] = useState(false);
+  const [simQuestions, setSimQuestions] = useState<SimulationQuestion[]>([]);
+  const [simGenerating, setSimGenerating] = useState(false);
+  const [repromptIndex, setRepromptIndex] = useState<number | null>(null);
+  const [repromptText, setRepromptText] = useState("");
+  const [jobTitleDuplicateHint, setJobTitleDuplicateHint] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  type SavedListing = { jobId: string; title: string; candidateCount: number; updatedAt: string };
-  const [savedListings, setSavedListings] = useState<SavedListing[]>([]);
-  const [listingsLoading, setListingsLoading] = useState(false);
-  const [jobTitleDuplicateHint, setJobTitleDuplicateHint] = useState("");
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat]);
-
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat]);
+  useEffect(() => { window.scrollTo(0, 0); }, [page]);
   useEffect(() => {
     if (!loading) return;
     setLoadingTipIndex(0);
-    const id = window.setInterval(() => {
-      setLoadingTipIndex((i) => (i + 1) % RECRUITER_LOADING_TIPS.length);
-    }, 17500);
+    const id = window.setInterval(() => setLoadingTipIndex((i) => (i + 1) % loadingTips.length), 3500);
     return () => window.clearInterval(id);
   }, [loading]);
-
-  function requireLogin(nav: () => void) {
-    if (isLoggedIn) { nav(); return; }
-    setPendingNav(() => nav);
-    setPage("login");
-  }
-
-  function handleLogin() {
-    signIn("google");
-  }
-
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    if (pendingNav) { pendingNav(); setPendingNav(null); }
-    else setPage(candidates.length ? "results" : "home");
-  }, [isLoggedIn, pendingNav, candidates.length]);
 
   const refreshSavedListings = useCallback(async () => {
     if (!isLoggedIn) {
@@ -301,23 +536,17 @@ export function HiringApp() {
     }
     setListingsLoading(true);
     try {
-      const data = await getJson("/api/jobs");
-      const jobs = (data as { jobs?: SavedListing[] }).jobs;
-      setSavedListings(Array.isArray(jobs) ? jobs : []);
+      const data = await apiFetch("/api/jobs");
+      setSavedListings(Array.isArray((data as { jobs?: SavedListing[] }).jobs) ? (data as { jobs: SavedListing[] }).jobs : []);
     } catch {
       setSavedListings([]);
     }
     setListingsLoading(false);
-  }, [getJson, isLoggedIn]);
+  }, [apiFetch, isLoggedIn]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setSavedListings([]);
-      return;
-    }
-    if (page !== "home") return;
-    void refreshSavedListings();
-  }, [isLoggedIn, page, refreshSavedListings]);
+  useEffect(() => { if (page === "home") void refreshSavedListings(); }, [page, refreshSavedListings]);
+
+  if (hashToken) return <CandidatePortal token={hashToken} apiBase={apiBase || DEFAULT_API_BASE} />;
 
   function resetNewListingWizard() {
     setActiveJobId(null);
@@ -326,150 +555,136 @@ export function HiringApp() {
     setCandidates([]);
     setSelected(null);
     setChat([]);
-    setChatInput("");
-    setEmailDraft("");
     setEmailState("idle");
+    setInviteLink("");
     setJobTitleDuplicateHint("");
+    setPage("onboard");
   }
 
   async function openSavedListing(jobId: string) {
     try {
-      const data = (await getJson(`/api/jobs/${encodeURIComponent(jobId)}`)) as {
-        jobId: string;
-        job: { title: string; description: string; requirements: string; culture: string };
-        candidates: typeof candidates;
-      };
-      setJob(data.job);
-      setCandidates(data.candidates);
-      setActiveJobId(data.jobId);
+      const data = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+      const bundle = data as { jobId: string; job: JobSpec; candidates: Candidate[] };
+      setJob(bundle.job);
+      setCandidates((bundle.candidates || []).map(normalizeCandidate));
+      setActiveJobId(bundle.jobId);
       setSelected(null);
-      setChat([]);
-      setChatInput("");
-      setEmailDraft("");
-      setEmailState("idle");
       setResumeFiles([]);
-      setPage("results");
-      void refreshSavedListings();
-    } catch (e) {
-      console.error(e);
-      alert("Could not open listing: " + (e as Error).message);
+      setPage("ats");
+    } catch (err) {
+      alert("Could not open listing: " + (err as Error).message);
     }
   }
 
-  async function handleFileSelect(
-    e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
-  ) {
-    const raw = e.target.files;
-    const files = Array.isArray(raw) ? raw : Array.from(raw ?? []);
-    if (!files.length) return;
-    const newFiles: { name: string; base64: string; type: string }[] = [];
-    for (const file of files) {
-      const base64 = await readFileAsBase64(file);
-      newFiles.push({ name: file.name, base64, type: file.type });
-    }
+  async function readFileAsBase64(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("Read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFileSelect(e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }) {
+    const files = Array.from(e.target.files ?? []).filter((file) =>
+      file.type === "application/pdf" || [".txt", ".doc", ".docx"].some((ext) => file.name.toLowerCase().endsWith(ext))
+    );
+    const entries: { name: string; base64: string; type: string }[] = [];
+    for (const file of files) entries.push({ name: file.name, base64: await readFileAsBase64(file), type: file.type });
     setResumeFiles((prev) => {
       const existing = new Set(prev.map((f) => f.name));
-      return [...prev, ...newFiles.filter((f) => !existing.has(f.name))];
+      return [...prev, ...entries.filter((entry) => !existing.has(entry.name))];
     });
     e.target.value = "";
   }
 
-  function readFileAsBase64(file: File) {
-    return new Promise<string>((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => { res((r.result as string).split(",")[1]); };
-      r.onerror = () => rej(new Error("Read failed"));
-      r.readAsDataURL(file);
-    });
-  }
-
-  function removeFile(name: string) {
-    setResumeFiles((prev) => prev.filter((f) => f.name !== name));
-  }
-
   async function analyzeResumes() {
-    if (!resumeFiles.length) return alert("Please upload at least one resume.");
+    if (!resumeFiles.length) return;
     setLoading(true);
-    if (!activeJobId) setCandidates([]);
     try {
-      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
-      const tokenJson = await tokenRes.json().catch(() => ({}));
-      const token =
-        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
-          ? (tokenJson as { token: string }).token
-          : "";
-      const base = apiBase.replace(/\/$/, "");
       const body = {
         job,
         resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
         ...(activeJobId ? { existingJobId: activeJobId } : {}),
       };
-      const res = await fetch(`${base}/api/analyze`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        code?: string;
-        existingJobId?: string;
-        candidates?: typeof candidates;
-        storage?: { skippedCount?: number };
+      const data = await apiFetch("/api/analyze", { method: "POST", body: JSON.stringify(body) }) as {
         jobId?: string;
+        candidates?: Candidate[];
+        storage?: { skippedCount?: number };
       };
-      if (res.status === 409) {
-        alert(
-          data.error ||
-            "You already have a listing for this title. Open it from the home screen to add résumés."
-        );
-        setLoading(false);
-        return;
-      }
-      if (!res.ok) throw new Error(data.error || `Analyze failed (${res.status})`);
-      const merged = data.candidates ?? [];
-      setCandidates(merged);
-      if (typeof data.jobId === "string") setActiveJobId(data.jobId);
-      const skippedCount = Number(data.storage?.skippedCount || 0);
-      if (skippedCount > 0) {
-        alert(`${skippedCount} resume(s) were ranked but not stored because no applicant email was detected.`);
-      }
+      setCandidates((data.candidates || []).map(normalizeCandidate));
+      if (data.jobId) setActiveJobId(data.jobId);
       setResumeFiles([]);
-      setPage("results");
+      setPage("ats");
+      if (data.storage?.skippedCount) alert(`${data.storage.skippedCount} resume(s) were ranked but not stored because no applicant email was detected.`);
       void refreshSavedListings();
     } catch (err) {
-      console.error(err);
       alert("Analysis failed: " + (err as Error).message);
     }
     setLoading(false);
   }
 
+  function openProfile(candidate: Candidate) {
+    const normalized = normalizeCandidate(candidate);
+    setSelected(normalized);
+    setManualRankInput(normalized.manualRank ? String(normalized.manualRank) : "");
+    setInterviewNotes(normalized.interviewNotes || "");
+    setInterviewDate(normalized.interviewDate || "");
+    setInterviewTime(normalized.interviewTime || "");
+    setChat([]);
+    setEmailState("idle");
+    setEmailDraft("");
+    setInviteLink("");
+    setShowSimEditor(false);
+    setShowSimReport(false);
+    setPage("profile");
+  }
+
+  function updateCandidateLocal(candidate: Candidate) {
+    const normalized = normalizeCandidate(candidate);
+    setCandidates((prev) => prev.map((c) => String(c.id) === String(normalized.id) ? normalized : c).sort((a, b) => safeScore(b.score) - safeScore(a.score)));
+    setSelected(normalized);
+    return normalized;
+  }
+
+  async function persistCandidate(candidate: Candidate) {
+    const updated = updateCandidateLocal(candidate);
+    if (!activeJobId) return updated;
+    try {
+      const data = await apiFetch("/api/candidates/update", {
+        method: "POST",
+        body: JSON.stringify({ jobId: activeJobId, candidateId: updated.id, candidate: updated }),
+      }) as { candidates?: Candidate[]; candidate?: Candidate };
+      if (data.candidates) setCandidates(data.candidates.map(normalizeCandidate));
+      if (data.candidate) setSelected(normalizeCandidate(data.candidate));
+    } catch (err) {
+      console.error(err);
+    }
+    return updated;
+  }
+
   async function sendChat() {
-    if (!chatInput.trim() || chatLoading) return;
-    const msg = chatInput.trim();
+    if (!chatInput.trim() || chatLoading || !selected) return;
+    const message = chatInput.trim();
     setChatInput("");
-    const newChat = [...chat, { role: "user", content: msg }];
-    setChat(newChat);
+    const next = [...chat, { role: "user", content: message }];
+    setChat(next);
     setChatLoading(true);
     try {
-      const { reply } = await postJson("/api/chat", {
-        job, selected,
-        messages: newChat.map((m) => ({ role: m.role, content: m.content })),
-      });
-      setChat([...newChat, { role: "assistant", content: reply }]);
+      const data = await apiFetch("/api/chat", { method: "POST", body: JSON.stringify({ job, selected, messages: next }) }) as { reply?: string };
+      setChat([...next, { role: "assistant", content: data.reply || "" }]);
     } catch {
-      setChat([...newChat, { role: "assistant", content: "Sorry, I ran into an error. Please try again." }]);
+      setChat([...next, { role: "assistant", content: "Sorry, I ran into an error. Please try again." }]);
     }
     setChatLoading(false);
   }
 
-  async function generateEmail() {
+  async function generateFollowupEmail() {
+    if (!selected) return;
     setEmailState("generating");
     try {
-      const { draft } = await postJson("/api/email", { job, selected });
-      setEmailDraft(draft);
+      const data = await apiFetch("/api/email", { method: "POST", body: JSON.stringify({ job, selected }) }) as { draft?: string };
+      setEmailDraft(data.draft || "");
       setEmailState("editing");
     } catch {
       setEmailState("idle");
@@ -477,470 +692,448 @@ export function HiringApp() {
     }
   }
 
-  function openInterviewInMailApp() {
-    const subject = job.title.trim() ? `Interview opportunity: ${job.title.trim()}` : "Interview opportunity";
-    const href = buildInterviewMailto({
-      to: selected?.email,
-      subject,
-      body: emailDraft,
-    });
-    window.location.href = href;
+  async function loadSimulationQuestions(candidate: Candidate) {
+    setShowSimEditor(true);
+    setRepromptIndex(null);
+    setRepromptText("");
+    if (candidate.generatedQuestions?.length) {
+      setSimQuestions(candidate.generatedQuestions);
+      return;
+    }
+    setSimGenerating(true);
+    try {
+      const data = await apiFetch("/api/simulations/generate", { method: "POST", body: JSON.stringify({ job, candidate }) }) as { questions?: SimulationQuestion[] };
+      setSimQuestions(data.questions || []);
+    } catch (err) {
+      alert("Question generation failed: " + (err as Error).message);
+    }
+    setSimGenerating(false);
   }
 
-  const cutoff = Math.max(1, Math.ceil(candidates.length / 2));
-  const topCandidates = candidates.slice(0, cutoff);
+  async function repromptQuestion(index: number) {
+    if (!repromptText.trim()) return;
+    setSimGenerating(true);
+    try {
+      const data = await apiFetch("/api/simulations/reprompt", {
+        method: "POST",
+        body: JSON.stringify({ job, candidate: selected, question: simQuestions[index], instruction: repromptText }),
+      }) as { question?: SimulationQuestion };
+      if (data.question) setSimQuestions((prev) => prev.map((q, i) => i === index ? data.question! : q));
+      setRepromptIndex(null);
+      setRepromptText("");
+    } catch (err) {
+      alert("Reprompt failed: " + (err as Error).message);
+    }
+    setSimGenerating(false);
+  }
 
-  const inputClass =
-    "w-full rounded-lg bg-paper-line/20 px-3.5 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/50 transition-colors duration-150 focus:bg-paper-line/30 focus:outline-none";
-  const btnPrimary =
-    "rounded-lg bg-accent/10 font-ui text-sm font-semibold text-accent transition-all duration-150 hover:bg-accent/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30";
-  const btnSecondary =
-    "rounded-lg bg-paper-line/20 font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/35 hover:text-ink active:scale-[0.98]";
+  async function sendSimulationInvite(questions: SimulationQuestion[]) {
+    if (!selected || !activeJobId) {
+      alert("Analyze and save the job before sending simulations.");
+      return;
+    }
+    try {
+      const data = await apiFetch("/api/simulations/invite", {
+        method: "POST",
+        body: JSON.stringify({ jobId: activeJobId, candidateId: selected.id, questions }),
+      }) as { token?: string; candidate?: Candidate };
+      const baseUrl = window.location.href.split("#")[0];
+      const link = `${baseUrl}#token=${data.token}`;
+      setInviteLink(link);
+      const updated = normalizeCandidate(data.candidate || { ...selected, testStatus: "invited", generatedQuestions: questions });
+      updateCandidateLocal(updated);
+      setShowSimEditor(false);
+      setEmailDraft(`Hi ${updated.name},\n\nThanks for your interest in ${job.title}. Please complete this 10-minute SocketHR job simulation so we can understand how you would approach real work in the role.\n\n${link}\n\nBest,\nThe Hiring Team`);
+      setEmailState("editing");
+    } catch (err) {
+      alert("Could not create invite: " + (err as Error).message);
+    }
+  }
 
-  const shell = "hiring-shell flex flex-col";
-  const content = "fade-in-up mx-auto w-full max-w-2xl px-6 py-10 text-left sm:px-10";
+  async function scoreInterviewNotes() {
+    if (!selected || !interviewNotes.trim()) return;
+    setInterviewScoring(true);
+    try {
+      const data = await apiFetch("/api/interview/score", {
+        method: "POST",
+        body: JSON.stringify({ jobId: activeJobId, candidateId: selected.id, job, candidate: selected, notes: interviewNotes, date: interviewDate, time: interviewTime }),
+      }) as { candidate?: Candidate; candidates?: Candidate[] };
+      if (data.candidates) setCandidates(data.candidates.map(normalizeCandidate));
+      if (data.candidate) setSelected(normalizeCandidate(data.candidate));
+    } catch (err) {
+      alert("Scoring failed: " + (err as Error).message);
+    }
+    setInterviewScoring(false);
+  }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: HOME
-  // ════════════════════════════════════════════════════════════════════════════
-  if (page === "home")
-    return (
-      <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className={content}>
-          <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
-          <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
-            Add resumes, get ranked candidates with scores and summaries — then dig in with interview tools.
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return candidates.filter((candidate) => {
+      const c = normalizeCandidate(candidate);
+      const matchesSearch = !q || [c.name, c.email, c.recent_role, c.raw_summary, c.interviewNotes, ...(c.skills || [])].some((v) => String(v || "").toLowerCase().includes(q));
+      if (!matchesSearch) return false;
+      if (atsFilter === "all") return true;
+      if (["hired", "rejected", "considering"].includes(atsFilter)) return c.hireStatus === atsFilter;
+      return c.testStatus === atsFilter;
+    });
+  }, [atsFilter, candidates, searchQuery]);
+
+  const stats = {
+    total: candidates.length,
+    tested: candidates.filter((c) => c.testStatus === "completed").length,
+    hired: candidates.filter((c) => c.hireStatus === "hired").length,
+    avgScore: candidates.length ? Math.round(candidates.reduce((sum, c) => sum + safeScore(c.score), 0) / candidates.length * 10) / 10 : 0,
+  };
+
+  const shell = "hiring-shell min-h-screen";
+  const content = "fade-in-up mx-auto w-full max-w-3xl px-5 py-10 sm:px-8";
+  const inputClass = "w-full rounded-2xl border border-paper-line bg-paper-card px-4 py-3 font-ui text-sm text-ink outline-none transition focus:border-accent/40";
+  const primary = "rounded-2xl bg-accent px-5 py-3 font-ui text-sm font-black text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40";
+  const secondary = "rounded-2xl bg-paper-line/30 px-5 py-3 font-ui text-sm font-semibold text-ink-muted transition hover:bg-paper-line/50 hover:text-ink";
+
+  if (page === "home") return (
+    <div className={shell}>
+      <AppNav loggedIn={isLoggedIn} userName={userName} onHome={() => setPage("home")} onLogin={() => signIn("google")} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+      <main className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:px-8 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+        <section>
+          <p className="font-ui text-xs font-black uppercase tracking-[0.35em] text-accent/70">SocketHR product</p>
+          <h1 className="mt-5 text-5xl font-bold leading-[1.02] tracking-tight text-ink sm:text-7xl">
+            Run the hiring pipeline like a performance lab.
+          </h1>
+          <p className="mt-6 max-w-xl font-ui text-lg leading-relaxed text-ink-muted">
+            Create a role, upload resumes, rank candidates, send simulations, score interviews, and ask AI questions from one light, fast workspace.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              resetNewListingWizard();
-              setPage("job");
-            }}
-            className={`mt-10 px-7 py-3 ${btnPrimary}`}
-          >
-            Create job listing
-          </button>
-          {isLoggedIn && (listingsLoading || savedListings.length > 0) && (
-            <div className="mt-14 w-full max-w-md">
-              {listingsLoading && savedListings.length === 0 ? (
-                <p className="font-ui text-sm text-ink-faint">Loading…</p>
-              ) : (
-                <ul className="flex flex-col gap-1">
-                  {savedListings.map((row) => (
-                    <li key={row.jobId}>
-                      <button
-                        type="button"
-                        onClick={() => void openSavedListing(row.jobId)}
-                        className="w-full rounded-lg py-2 text-left text-xl font-bold leading-snug tracking-tight text-ink-muted transition-colors duration-150 hover:bg-paper-line/15 hover:text-ink sm:text-2xl"
-                      >
-                        {row.title || "Untitled role"}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button type="button" onClick={resetNewListingWizard} className={primary}>Create job listing</button>
+            {!isLoggedIn && <button type="button" onClick={() => signIn("google")} className={secondary}>Sign in with Google</button>}
+          </div>
+        </section>
+        <section className="rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="font-ui text-sm font-black text-ink">Your workspace</h2>
+            {listingsLoading && <Spinner label="Loading..." />}
+          </div>
+          {isLoggedIn && savedListings.length > 0 ? (
+            <div className="mt-5 grid gap-2">
+              {savedListings.map((listing) => (
+                <button key={listing.jobId} type="button" onClick={() => void openSavedListing(listing.jobId)} className="rounded-2xl border border-paper-line bg-paper px-4 py-3 text-left transition hover:border-accent/25">
+                  <p className="font-ui text-sm font-bold text-ink">{listing.title || "Untitled role"}</p>
+                  <p className="mt-1 font-ui text-xs text-ink-faint">{listing.candidateCount} candidates</p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl bg-paper-line/25 p-5">
+              <p className="font-ui text-sm text-ink-muted">
+                {isLoggedIn ? "No saved jobs yet. Create one to start your pipeline." : "Guests can demo the product. Sign in to persist listings across sessions."}
+              </p>
             </div>
           )}
-        </div>
-      </div>
-    );
+        </section>
+      </main>
+    </div>
+  );
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: LOGIN
-  // ════════════════════════════════════════════════════════════════════════════
-  if (page === "login")
-    return (
-      <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => {}} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className={content} style={{ maxWidth: "24rem" }}>
-          <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
-          <div className="mt-8 flex flex-col gap-3">
-            <p className="font-ui text-sm text-ink-muted">Sign in with Google to see the full ranked list — including the lower half of candidates.</p>
-            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Continue with Google</button>
+  if (page === "onboard") return (
+    <div className={shell}>
+      <AppNav loggedIn={isLoggedIn} userName={userName} onHome={() => setPage("home")} onLogin={() => signIn("google")} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+      <main className={content}>
+        <section className="rounded-[2rem] border border-paper-line bg-paper-card p-7 shadow-sm">
+          <p className="font-ui text-xs font-black uppercase tracking-[0.3em] text-accent/70">Step 1</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink">Create job listing</h1>
+          <div className="mt-7 grid gap-4">
+            <input className={inputClass} placeholder="Job title" value={job.title} onChange={(e) => { setJobTitleDuplicateHint(""); setJob({ ...job, title: e.target.value }); }} />
+            {jobTitleDuplicateHint && <p className="font-ui text-sm text-amber-800">{jobTitleDuplicateHint}</p>}
+            <textarea rows={4} className={inputClass} placeholder="Job description" value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
+            <textarea rows={3} className={inputClass} placeholder="Requirements" value={job.requirements} onChange={(e) => setJob({ ...job, requirements: e.target.value })} />
+            <textarea rows={2} className={inputClass} placeholder="Culture and fit" value={job.culture} onChange={(e) => setJob({ ...job, culture: e.target.value })} />
+            <button type="button" disabled={!job.title || !job.description || !job.requirements} onClick={() => {
+              const norm = normalizeJobTitle(job.title);
+              if (isLoggedIn && !activeJobId && savedListings.some((l) => normalizeJobTitle(l.title) === norm)) {
+                setJobTitleDuplicateHint("You already have a listing for this title. Open it from the home screen to add resumes.");
+                return;
+              }
+              setPage("upload");
+            }} className={primary}>Next: upload resumes</button>
           </div>
-          <button
-            type="button"
-            onClick={() => setPage(candidates.length ? "results" : "home")}
-            className="mt-8 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
-          >
-            ← Back
-          </button>
-        </div>
-      </div>
-    );
+        </section>
+      </main>
+    </div>
+  );
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: JOB FORM
-  // ════════════════════════════════════════════════════════════════════════════
-  if (page === "job")
-    return (
-      <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className={content}>
-          <WizardProgress step={1} />
-          <h2 className="text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
-          <div className="mt-8 flex flex-col gap-5">
-            <div>
-              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job title <span className="text-accent/60">*</span></label>
-              <input
-                className={inputClass}
-                placeholder="e.g. Senior Software Engineer"
-                value={job.title}
-                onChange={(e) => {
-                  setJobTitleDuplicateHint("");
-                  setJob({ ...job, title: e.target.value });
-                }}
-              />
-              {jobTitleDuplicateHint ? (
-                <p className="mt-2 font-ui text-sm text-amber-800/90">{jobTitleDuplicateHint}</p>
-              ) : null}
-            </div>
-            <div>
-              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job description <span className="text-accent/60">*</span></label>
-              <textarea rows={4} className={`${inputClass} resize-none`} placeholder="Describe the role, key responsibilities, day-to-day…" value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
-            </div>
-            <div>
-              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Requirements <span className="text-accent/60">*</span></label>
-              <textarea rows={3} className={`${inputClass} resize-none`} placeholder="Required skills, years of experience, education, certifications…" value={job.requirements} onChange={(e) => setJob({ ...job, requirements: e.target.value })} />
-            </div>
-            <div>
-              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Company culture and fit</label>
-              <textarea rows={2} className={`${inputClass} resize-none`} placeholder="Values, team vibe, ideal personality traits, working style…" value={job.culture} onChange={(e) => setJob({ ...job, culture: e.target.value })} />
-            </div>
-            <button
-              type="button"
-              disabled={!job.title || !job.description || !job.requirements}
-              onClick={() => {
-                const norm = normalizeJobTitleClient(job.title);
-                if (
-                  isLoggedIn &&
-                  !activeJobId &&
-                  savedListings.some((l) => normalizeJobTitleClient(l.title) === norm)
-                ) {
-                  setJobTitleDuplicateHint(
-                    "You already have a listing for this title. Open it from the home screen to add résumés."
-                  );
-                  return;
-                }
-                setJobTitleDuplicateHint("");
-                setPage("upload");
-              }}
-              className={`mt-1 py-3 ${btnPrimary}`}
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: UPLOAD
-  // ════════════════════════════════════════════════════════════════════════════
   if (page === "upload") {
     function onDrop(e: DragEvent<HTMLDivElement>) {
       e.preventDefault();
       setDragging(false);
-      const files = Array.from(e.dataTransfer.files).filter(
-        (f: File) => f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx")
-      );
-      if (!files.length) return alert("Please drop PDF or text files.");
-      handleFileSelect({ target: { files, value: "" } });
+      void handleFileSelect({ target: { files: Array.from(e.dataTransfer.files), value: "" } });
     }
-
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className={content}>
-          <WizardProgress step={2} />
-          <h2 className="text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
-
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
-            aria-label="Upload résumés: drop PDF or text files, or click to choose files."
-            className={`mt-8 flex cursor-pointer flex-col items-center rounded-xl py-14 transition-all duration-200 ${
-              dragging ? "bg-accent-soft/30" : "bg-paper-line/15 hover:bg-paper-line/25"
-            }`}
-          >
-            <svg className="h-10 w-10 text-ink-faint/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
-          </div>
-
-          {resumeFiles.length > 0 && (
-            <div className="mt-6 flex max-h-52 flex-col gap-1 overflow-y-auto">
-              {resumeFiles.map((f) => (
-                <div key={f.name} className="flex items-center justify-between rounded-lg py-2 transition-colors duration-150 hover:bg-paper-line/15">
-                  <div className="flex min-w-0 items-center gap-3 pl-1">
-                    <span className="truncate font-ui text-sm text-ink">{f.name}</span>
+        <AppNav loggedIn={isLoggedIn} userName={userName} onHome={() => setPage("home")} onLogin={() => signIn("google")} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <main className={content}>
+          <section className="rounded-[2rem] border border-paper-line bg-paper-card p-7 shadow-sm">
+            <p className="font-ui text-xs font-black uppercase tracking-[0.3em] text-accent/70">Step 2</p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-ink">Upload resumes</h1>
+            <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop} onClick={() => fileInputRef.current?.click()} className={`mt-7 flex cursor-pointer flex-col items-center rounded-[2rem] border-2 border-dashed px-6 py-14 text-center transition ${dragging ? "border-accent bg-accent-soft" : "border-paper-line bg-paper hover:border-accent/30"}`}>
+              <p className="font-ui text-sm font-bold text-ink">Drag and drop resumes here</p>
+              <p className="mt-1 font-ui text-xs text-ink-faint">PDF, TXT, DOC, or DOCX. Bulk upload supported.</p>
+              <span className="mt-4 rounded-xl bg-accent-soft px-4 py-2 font-ui text-xs font-black text-accent">Browse files</span>
+              <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
+            </div>
+            {resumeFiles.length > 0 && (
+              <div className="mt-5 grid max-h-52 gap-2 overflow-y-auto">
+                {resumeFiles.map((file) => (
+                  <div key={file.name} className="flex items-center justify-between rounded-2xl bg-paper px-4 py-2 font-ui text-sm">
+                    <span className="truncate text-ink-muted">{file.name}</span>
+                    <button type="button" onClick={() => setResumeFiles((prev) => prev.filter((f) => f.name !== file.name))} className="text-xs text-ink-faint hover:text-ink">Remove</button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
-                    className="ml-3 shrink-0 rounded-md px-2 py-1 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-8 flex gap-3">
-            <button
-              type="button"
-              onClick={() => (activeJobId ? setPage("results") : setPage("job"))}
-              className={`flex-1 py-2.5 ${btnSecondary}`}
-            >
-              ← Back
-            </button>
-            <button type="button" disabled={loading || !resumeFiles.length} onClick={analyzeResumes} className={`flex-1 py-2.5 ${btnPrimary}`}>
-              {loading ? "Analyzing…" : `Analyze ${resumeFiles.length} résumé(s)`}
-            </button>
-          </div>
-          {loading && (
-            <div className="mt-6">
-              <Spinner label={RECRUITER_LOADING_TIPS[loadingTipIndex]} />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: RESULTS
-  // ════════════════════════════════════════════════════════════════════════════
-  if (page === "results") {
-    return (
-      <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className="fade-in-up mx-auto w-full max-w-3xl px-6 py-10 text-left sm:px-10">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
-            <button type="button" onClick={() => setPage("upload")} className="shrink-0 rounded-lg px-2.5 py-1.5 font-ui text-sm text-accent/85 transition-colors duration-150 hover:bg-accent/5 hover:text-accent">
-              Add résumés
-            </button>
-          </div>
-
-          <div className="mt-10 flex flex-col">
-            {topCandidates.map((c, i) => (
-              <CandidateRow key={c.id ?? i} c={c} rank={i + 1} isTop onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
-            ))}
-          </div>
-
-          {isLoggedIn && candidates.length > cutoff && (
-            <>
-              <div className="my-8 h-px bg-paper-line/40" aria-hidden />
-              <div className="mb-8 flex flex-col">
-                {candidates.slice(cutoff).map((c, i) => (
-                  <CandidateRow key={c.id ?? cutoff + i} c={c} rank={cutoff + i + 1} onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
                 ))}
               </div>
-            </>
-          )}
-
-          {!isLoggedIn && candidates.length > cutoff && (
-            <div className="mt-10">
-              <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`px-6 py-2.5 ${btnPrimary}`}>
-                Sign in to see the other {candidates.length - cutoff} candidate{candidates.length - cutoff === 1 ? "" : "s"}
-              </button>
+            )}
+            {loading && <div className="mt-5 rounded-2xl bg-paper p-4"><Spinner label={loadingTips[loadingTipIndex]} /></div>}
+            <div className="mt-6 flex gap-3">
+              <button type="button" onClick={() => setPage(activeJobId ? "ats" : "onboard")} className={`flex-1 ${secondary}`}>Back</button>
+              <button type="button" disabled={!resumeFiles.length || loading} onClick={analyzeResumes} className={`flex-1 ${primary}`}>{loading ? "Analyzing..." : `Analyze ${resumeFiles.length} resume(s)`}</button>
             </div>
-          )}
-        </div>
+          </section>
+        </main>
       </div>
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // PAGE: PROFILE
-  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "ats") return (
+    <div className={shell}>
+      <AppNav loggedIn={isLoggedIn} userName={userName} onHome={() => setPage("home")} onLogin={() => signIn("google")} onLogout={() => signOut()} onNewJob={resetNewListingWizard} searchQuery={searchQuery} setSearchQuery={setSearchQuery} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+      <div className="flex min-h-[calc(100vh-57px)]">
+        {sidebarOpen && (
+          <aside className="hidden w-60 shrink-0 border-r border-paper-line/60 bg-paper-card/55 p-4 sm:block">
+            <p className="font-ui text-xs font-black uppercase tracking-widest text-ink-faint">Filter</p>
+            <div className="mt-3 grid gap-1">
+              {["all", "pending", "invited", "completed", "considering", "hired", "rejected"].map((filter) => (
+                <button key={filter} type="button" onClick={() => setAtsFilter(filter)} className={`rounded-xl px-3 py-2 text-left font-ui text-xs capitalize ${atsFilter === filter ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-paper-line/25"}`}>{filter === "pending" ? "not tested" : filter}</button>
+              ))}
+            </div>
+          </aside>
+        )}
+        <main className="min-w-0 flex-1">
+          <div className="border-b border-paper-line/60 px-5 py-4 sm:px-8">
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setSidebarOpen((v) => !v)} className="rounded-lg px-2 py-1 text-ink-faint hover:bg-paper-line/25">Menu</button>
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-2xl font-bold tracking-tight text-ink">{searchQuery ? `Search: ${searchQuery}` : job.title || "Pipeline"}</h1>
+                <p className="font-ui text-xs text-ink-faint">{filtered.length} candidate(s)</p>
+              </div>
+              <div className="hidden gap-2 md:flex">
+                {[["Candidates", stats.total], ["Avg", stats.avgScore], ["Tested", stats.tested], ["Hired", stats.hired]].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl bg-paper-card px-4 py-2 text-center shadow-sm">
+                    <p className="font-ui text-sm font-black text-ink">{value}</p>
+                    <p className="font-ui text-[11px] text-ink-faint">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setPage("upload")} className={primary}>+ Upload resumes</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left font-ui text-sm">
+              <thead className="border-b border-paper-line bg-paper-card/70 text-xs uppercase tracking-wider text-ink-faint">
+                <tr>{["Candidate", "Current Role", "Resume", "Simulation", "Combined", "Status", "Pipeline", "Actions"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {filtered.map((candidate) => {
+                  const c = normalizeCandidate(candidate);
+                  return (
+                    <tr key={String(c.id)} onClick={() => openProfile(c)} className="cursor-pointer border-b border-paper-line/50 transition hover:bg-paper-card/60">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft font-black text-accent">{c.name?.[0]?.toUpperCase() || "?"}</span>
+                          <div><p className="font-bold text-ink">{c.name}</p><p className="text-xs text-ink-faint">{c.email}</p></div>
+                        </div>
+                      </td>
+                      <td className="max-w-xs truncate px-4 py-3 text-ink-muted">{c.recent_role}</td>
+                      <td className="px-4 py-3"><ScorePill score={c.resumeScore} /></td>
+                      <td className="px-4 py-3"><ScorePill score={c.simulationScore} /></td>
+                      <td className="px-4 py-3"><ScorePill score={c.score} /></td>
+                      <td className="px-4 py-3"><StatusPill status={c.testStatus} /></td>
+                      <td className="px-4 py-3"><HireBadge status={c.hireStatus} /></td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => void persistCandidate({ ...c, hireStatus: c.hireStatus === "hired" ? "none" : "hired" })} className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">Hire</button>
+                          <button type="button" onClick={() => void persistCandidate({ ...c, hireStatus: c.hireStatus === "rejected" ? "none" : "rejected" })} className="rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-800">Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+
   if (page === "profile" && selected) {
-    const c = selected;
+    const c = normalizeCandidate(candidates.find((row) => String(row.id) === String(selected.id)) || selected);
+    const hasTest = c.testStatus === "completed";
     return (
       <div className={shell}>
-        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
-        <div className={content}>
-          <button
-            type="button"
-            onClick={() => setPage("results")}
-            aria-label="Back to results"
-            className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-
-          {/* Header */}
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10 text-lg font-semibold text-accent">
-              {c.name?.[0]?.toUpperCase() || "?"}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-2xl font-bold tracking-tight text-ink">{c.name}</h2>
-                <ScorePill score={c.score ?? 0} />
+        <AppNav loggedIn={isLoggedIn} userName={userName} onHome={() => setPage("home")} onLogin={() => signIn("google")} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        {showSimEditor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4">
+            <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-[2rem] border border-paper-line bg-paper-card shadow-2xl">
+              <div className="flex items-center justify-between border-b border-paper-line px-6 py-4">
+                <div><h2 className="text-xl font-bold text-ink">Review & edit simulation</h2><p className="font-ui text-xs text-ink-faint">Questions for {c.name}</p></div>
+                <button type="button" onClick={() => setShowSimEditor(false)} className="text-2xl text-ink-faint">x</button>
               </div>
-              <p className="mt-0.5 font-ui text-sm text-ink-muted">{c.recent_role}</p>
-              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-ui text-xs text-ink-faint">
-                {c.email && <span>{c.email}</span>}
-                {c.phone && <span>{c.phone}</span>}
+              <div className="max-h-[65vh] overflow-y-auto p-6">
+                {simGenerating && <Spinner label="Generating simulation..." />}
+                <div className="grid gap-4">
+                  {simQuestions.map((question, index) => (
+                    <div key={index} className="rounded-2xl border border-paper-line bg-paper p-4">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <p className="font-ui text-xs font-black uppercase tracking-wider text-accent">Q{index + 1} {question.type.replace("_", " ")}</p>
+                        <div className="flex gap-3">
+                          <button type="button" onClick={() => setRepromptIndex(repromptIndex === index ? null : index)} className="font-ui text-xs font-bold text-accent">Reprompt</button>
+                          <button type="button" onClick={() => setSimQuestions((prev) => prev.filter((_, i) => i !== index))} className="font-ui text-xs text-red-700">Remove</button>
+                        </div>
+                      </div>
+                      {question.scenario && <p className="mb-2 font-ui text-xs italic text-ink-faint">Scenario: {question.scenario}</p>}
+                      {question.type === "case_unfolding" ? (
+                        <div className="grid gap-2 font-ui text-sm text-ink-muted">
+                          <p><strong className="text-ink">Phase 1:</strong> {question.phase1_situation} {question.phase1_question}</p>
+                          <p><strong className="text-ink">Twist:</strong> {question.phase2_reveal} {question.phase2_question}</p>
+                        </div>
+                      ) : question.type === "prioritization" ? (
+                        <ul className="list-disc pl-5 font-ui text-sm text-ink-muted">{safeArr(question.items).map((item) => <li key={item}>{item}</li>)}</ul>
+                      ) : (
+                        <p className="font-ui text-sm text-ink-muted">{question.question}</p>
+                      )}
+                      {repromptIndex === index && (
+                        <div className="mt-3 flex gap-2">
+                          <input className={inputClass} placeholder="Make it more role-specific..." value={repromptText} onChange={(e) => setRepromptText(e.target.value)} />
+                          <button type="button" onClick={() => void repromptQuestion(index)} className={primary}>Go</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 border-t border-paper-line px-6 py-4">
+                <button type="button" onClick={() => void loadSimulationQuestions(c)} className={secondary}>Regenerate all</button>
+                <button type="button" disabled={!simQuestions.length || simGenerating} onClick={() => void sendSimulationInvite(simQuestions)} className={`flex-1 ${primary}`}>Send to candidate</button>
               </div>
             </div>
           </div>
-
-          <p className="mt-6 text-[15px] italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
-          {c.score_rationale && <p className="mt-2 text-sm text-ink-muted">{c.score_rationale}</p>}
-
-          {c.skills && c.skills.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-1.5">
-              {c.skills.map((s) => (
-                <span key={s} className="rounded-full bg-paper-line/25 px-2.5 py-0.5 font-ui text-xs text-ink-muted">{s}</span>
-              ))}
-            </div>
-          )}
-
-          {/* Strengths & Gaps */}
-          <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
-            <div>
-              <p className="mb-2 text-sm font-semibold text-ink">Strengths</p>
-              <ul className="flex flex-col gap-2">
-                {(c.strengths || []).map((s, i) => (
-                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
-                    <span className="mt-1 shrink-0 text-emerald-600/50">•</span>{s}
-                  </li>
+        )}
+        {showSimReport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4">
+            <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div><h2 className="text-2xl font-bold text-ink">Simulation report</h2><p className="font-ui text-sm text-ink-faint">{c.name}</p></div>
+                <button type="button" onClick={() => setShowSimReport(false)} className="text-2xl text-ink-faint">x</button>
+              </div>
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-paper p-4 text-center"><p className="text-xs text-ink-faint">Resume</p><p className="text-2xl font-black text-ink">{c.resumeScore}/10</p></div>
+                <div className="rounded-2xl bg-accent-soft p-4 text-center"><p className="text-xs text-accent">Simulation</p><p className="text-2xl font-black text-accent">{c.simulationScore}/10</p></div>
+                <div className="rounded-2xl bg-emerald-50 p-4 text-center"><p className="text-xs text-emerald-800">Combined</p><p className="text-2xl font-black text-emerald-800">{c.score}/10</p></div>
+              </div>
+              {c.assessmentSummary && <p className="mt-5 rounded-2xl bg-paper p-4 font-ui text-sm italic text-ink-muted">{c.assessmentSummary}</p>}
+              <div className="mt-5 grid gap-3">
+                {(c.questionBreakdown || []).map((row, index) => (
+                  <div key={index} className="rounded-2xl border border-paper-line bg-paper p-4">
+                    <div className="flex items-center justify-between"><p className="font-ui text-sm font-bold text-ink">Question {row.questionId || index + 1}</p><ScorePill score={row.score} /></div>
+                    <p className="mt-2 font-ui text-sm text-ink-muted">{row.feedback}</p>
+                  </div>
                 ))}
-              </ul>
-            </div>
-            <div>
-              <p className="mb-2 text-sm font-semibold text-ink">Gaps</p>
-              <ul className="flex flex-col gap-2">
-                {(c.weaknesses || []).map((w, i) => (
-                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
-                    <span className="mt-1 shrink-0 text-red-500/40">•</span>{w}
-                  </li>
-                ))}
-              </ul>
+              </div>
             </div>
           </div>
+        )}
+        <main className="mx-auto max-w-4xl px-5 py-8 sm:px-8">
+          <button type="button" onClick={() => setPage("ats")} className="mb-5 font-ui text-xs font-bold text-accent">Back to pipeline</button>
+          <section className="rounded-[2rem] border border-paper-line bg-paper-card p-7 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-accent-soft text-2xl font-black text-accent">{c.name?.[0]?.toUpperCase() || "?"}</span>
+                <div><h1 className="text-3xl font-bold tracking-tight text-ink">{c.name}</h1><p className="font-ui text-sm text-ink-muted">{c.recent_role}</p><p className="mt-1 font-ui text-xs text-ink-faint">{c.email} {c.phone ? `· ${c.phone}` : ""}</p></div>
+              </div>
+              <div className="flex flex-wrap gap-2"><ScorePill score={c.score} /><StatusPill status={c.testStatus} /><HireBadge status={c.hireStatus} />{c.integrityFlag && <span className="rounded-full bg-red-50 px-2.5 py-1 font-ui text-xs font-bold text-red-800">Integrity flag</span>}</div>
+            </div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl bg-paper p-4 text-center"><p className="font-ui text-xs text-ink-faint">Resume</p><p className="text-2xl font-black text-ink">{c.resumeScore}/10</p></div>
+              <div className="rounded-2xl bg-paper p-4 text-center"><p className="font-ui text-xs text-ink-faint">Simulation</p><p className="text-2xl font-black text-ink">{c.simulationScore ?? "-"}</p></div>
+              <div className="rounded-2xl bg-paper p-4 text-center"><p className="font-ui text-xs text-ink-faint">Combined</p><p className="text-2xl font-black text-accent">{c.score}/10</p></div>
+            </div>
+            <p className="mt-5 font-ui text-sm italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
+            <div className="mt-4 flex flex-wrap gap-1.5">{safeArr(c.skills).map((skill) => <span key={skill} className="rounded-full bg-paper-line/35 px-2.5 py-1 font-ui text-xs text-ink-muted">{skill}</span>)}</div>
+          </section>
 
-          {/* Email */}
-          <div className="mt-10">
-            {emailState === "idle" && (
-              <button type="button" onClick={generateEmail} className={`px-5 py-2 ${btnPrimary}`}>Generate interview email</button>
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <section className="rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+              <h2 className="font-ui text-sm font-black text-ink">Strengths</h2>
+              <ul className="mt-3 grid gap-2 font-ui text-sm text-ink-muted">{[...safeArr(c.strengths), ...safeArr(c.assessmentStrengths)].map((item, i) => <li key={i}>- {item}</li>)}</ul>
+            </section>
+            <section className="rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+              <h2 className="font-ui text-sm font-black text-ink">Gaps</h2>
+              <ul className="mt-3 grid gap-2 font-ui text-sm text-ink-muted">{[...safeArr(c.weaknesses), ...safeArr(c.assessmentGaps)].map((item, i) => <li key={i}>- {item}</li>)}</ul>
+            </section>
+          </div>
+
+          <section className="mt-5 rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+            {c.testStatus === "completed" ? (
+              <div className="flex items-center justify-between gap-4"><div><h2 className="font-ui text-sm font-black text-emerald-800">Simulation complete</h2><p className="mt-1 font-ui text-sm text-ink-muted">Full performance report is available.</p></div><button type="button" onClick={() => setShowSimReport(true)} className={primary}>View report</button></div>
+            ) : c.testStatus === "invited" ? (
+              <div><h2 className="font-ui text-sm font-black text-amber-800">Simulation sent</h2><button type="button" onClick={() => void loadSimulationQuestions(c)} className="mt-2 font-ui text-xs font-bold text-accent">Edit simulation</button></div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-ui text-sm font-black text-ink">10-minute case simulation</h2><p className="mt-1 font-ui text-sm text-ink-muted">Adaptive scenarios plus prioritization challenges.</p></div><button type="button" onClick={() => void loadSimulationQuestions(c)} className={primary}>Review & send simulation</button></div>
             )}
-            {emailState === "generating" && <Spinner label="Drafting email…" />}
+          </section>
+
+          <section className="mt-5 rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+            <h2 className="font-ui text-sm font-black text-ink">Manual rank override</h2>
+            <div className="mt-4 grid grid-cols-10 gap-1.5">{Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setManualRankInput(String(n))} className={`rounded-xl py-2 font-ui text-xs font-black ${manualRankInput === String(n) ? "bg-accent text-white" : "bg-paper text-ink-muted"}`}>{n}</button>)}</div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={!manualRankInput} onClick={() => void persistCandidate({ ...c, score: Number(manualRankInput), manualRank: Number(manualRankInput) })} className={primary}>Apply</button>
+              {c.manualRank && <button type="button" onClick={() => { setManualRankInput(""); void persistCandidate({ ...c, score: c.resumeScore, manualRank: null }); }} className={secondary}>Clear</button>}
+            </div>
+          </section>
+
+          <section className="mt-5 rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+            <h2 className="font-ui text-sm font-black text-ink">Interview</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2"><input type="date" className={inputClass} value={interviewDate} onChange={(e) => setInterviewDate(e.target.value)} /><input type="time" className={inputClass} value={interviewTime} onChange={(e) => setInterviewTime(e.target.value)} /></div>
+            <textarea rows={5} className={`mt-3 ${inputClass}`} placeholder={`Notes for ${c.name}...`} value={interviewNotes} onChange={(e) => setInterviewNotes(e.target.value)} />
+            {c.interviewSummary && <p className="mt-3 rounded-2xl bg-emerald-50 p-3 font-ui text-sm text-emerald-800">{c.interviewSummary}</p>}
+            <button type="button" disabled={!interviewNotes.trim() || interviewScoring} onClick={() => void scoreInterviewNotes()} className={`mt-3 ${primary}`}>{interviewScoring ? "Scoring..." : "Save & score notes"}</button>
+          </section>
+
+          <section className="mt-5 rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+            <h2 className="font-ui text-sm font-black text-ink">Send email</h2>
+            {emailState === "idle" && <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void loadSimulationQuestions(c)} className={secondary}>Simulation invite</button><button type="button" onClick={() => void generateFollowupEmail()} className={primary}>Interview follow-up</button></div>}
+            {emailState === "generating" && <div className="mt-3"><Spinner label="Drafting..." /></div>}
             {emailState === "editing" && (
-              <div>
-                <p className="sr-only">Recipient: {c.email || "address not on file"}</p>
-                <textarea
-                  rows={9}
-                  className={`${inputClass} mb-3 font-mono text-[13px] leading-relaxed`}
-                  value={emailDraft}
-                  onChange={(e) => setEmailDraft(e.target.value)}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={openInterviewInMailApp} className={`px-5 py-2 ${btnPrimary}`}>
-                    Open in email app
-                  </button>
-                  <button type="button" onClick={() => setEmailState("idle")} className={`px-4 py-2 ${btnSecondary}`}>Discard</button>
-                </div>
+              <div className="mt-3">
+                <textarea rows={9} className={`${inputClass} font-mono text-[13px]`} value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} />
+                {inviteLink && <div className="mt-3 rounded-2xl bg-paper p-3"><p className="break-all font-mono text-xs text-ink-muted">{inviteLink}</p><button type="button" onClick={() => { void navigator.clipboard.writeText(inviteLink); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }} className="mt-2 font-ui text-xs font-bold text-accent">{copied ? "Copied" : "Copy link"}</button></div>}
+                <div className="mt-3 flex gap-2"><button type="button" onClick={() => { window.location.href = buildMailto({ to: c.email, subject: job.title ? `Interview opportunity: ${job.title}` : "Interview opportunity", body: emailDraft }); }} className={primary}>Open in email app</button><button type="button" onClick={() => { setEmailState("idle"); setInviteLink(""); }} className={secondary}>Discard</button></div>
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Chat */}
-          <div className="mt-10">
-            <div className="flex min-h-12 max-h-64 flex-col gap-2 overflow-y-auto" aria-label="Chat about candidate">
-              {chat.map((m, i) => (
-                <div
-                  key={i}
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${
-                    m.role === "user"
-                      ? "self-end bg-accent/10 text-accent"
-                      : "self-start bg-paper-line/20 text-ink-muted"
-                  }`}
-                >
-                  {m.role === "user" ? m.content : <AssistantMarkdown content={m.content} />}
-                </div>
-              ))}
-              {chatLoading && <div className="self-start"><Spinner label="Thinking…" /></div>}
+          <section className="mt-5 rounded-[2rem] border border-paper-line bg-paper-card p-6 shadow-sm">
+            <h2 className="font-ui text-sm font-black text-ink">Hiring intelligence chat</h2>
+            <div className="mt-3 flex max-h-72 min-h-16 flex-col gap-2 overflow-y-auto">
+              {chat.length === 0 && <p className="font-ui text-sm italic text-ink-faint">Ask anything about this candidate...</p>}
+              {chat.map((message, index) => <div key={index} className={`max-w-[86%] rounded-2xl px-3 py-2 font-ui text-sm ${message.role === "user" ? "self-end bg-accent-soft text-accent" : "self-start bg-paper text-ink-muted"}`}>{message.role === "assistant" ? <AssistantMarkdown content={message.content} /> : message.content}</div>)}
+              {chatLoading && <div className="self-start"><Spinner label="Thinking..." /></div>}
               <div ref={chatEndRef} />
             </div>
-            <div className="mt-3 flex gap-2">
-              <input
-                className={`flex-1 ${inputClass}`}
-                placeholder="Ask the assistant…"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendChat()}
-              />
-              <button type="button" onClick={sendChat} disabled={chatLoading || !chatInput.trim()} className={`shrink-0 px-4 py-2 ${btnPrimary}`}>
-                Send
-              </button>
-            </div>
-          </div>
-        </div>
+            <div className="mt-3 flex gap-2"><input className={inputClass} placeholder="Ask about this candidate..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void sendChat(); }} /><button type="button" disabled={!chatInput.trim() || chatLoading} onClick={() => void sendChat()} className={primary}>Send</button></div>
+          </section>
+        </main>
       </div>
     );
   }
 
   return null;
-}
-
-type CandidateRowData = {
-  name?: string;
-  score?: number;
-  recent_role?: string;
-  fit_summary?: string;
-};
-
-function CandidateRow({
-  c,
-  rank,
-  isTop = false,
-  onClick,
-}: {
-  c: CandidateRowData;
-  rank: number;
-  isTop?: boolean;
-  onClick: () => void;
-}) {
-  const summary = c.fit_summary && typeof c.fit_summary === "string" ? c.fit_summary.slice(0, 55) : "";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-3 text-left transition-all duration-150 hover:bg-paper-line/15 active:scale-[0.998] ${
-        isTop ? "" : "opacity-90"
-      }`}
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="w-5 shrink-0 font-ui text-xs font-semibold text-ink-faint/60">{rank}</span>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/8 font-ui text-sm font-semibold text-accent/80">
-          {c.name?.[0]?.toUpperCase() || "?"}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate font-ui text-sm font-medium text-ink">{c.name}</p>
-          <p className="truncate font-ui text-xs text-ink-faint">{c.recent_role || summary || ""}</p>
-        </div>
-      </div>
-      <div className="ml-3 flex shrink-0 items-center gap-2.5">
-        <ScorePill score={c.score ?? 0} />
-        <svg className="h-3.5 w-3.5 text-ink-faint/30 transition-colors duration-150 group-hover:text-ink-faint/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </div>
-    </button>
-  );
 }

@@ -11,6 +11,8 @@ const JOB_ID_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const TITLE_INDEX_FILE = "title-index.json";
+const INVITES_DIR = "_invites";
+const INVITE_TOKEN_RE = /^[a-zA-Z0-9_-]{24,96}$/;
 
 /**
  * Normalize job title for uniqueness: trim, lowercase, collapse internal whitespace.
@@ -42,6 +44,12 @@ function uploaderRoot(uploaderId) {
 
 function titleIndexPath(uploaderId) {
   return path.join(uploaderRoot(uploaderId), TITLE_INDEX_FILE);
+}
+
+function invitePath(token) {
+  const safeToken = String(token || "").trim();
+  if (!INVITE_TOKEN_RE.test(safeToken)) return null;
+  return path.join(DATA_ROOT, INVITES_DIR, `${safeToken}.json`);
 }
 
 /**
@@ -187,7 +195,66 @@ export async function loadJobBundle(uploaderId, jobId) {
   if (!job) return null;
   const candidates = Array.isArray(results?.candidates) ? results.candidates : [];
   const updatedAt = String(results?.savedAt || job.savedAt || "");
-  return { job, candidates, updatedAt };
+  const storage = results?.storage || null;
+  return { job, candidates, updatedAt, storage };
+}
+
+/**
+ * @param {string} jobId
+ * @param {string} uploaderId
+ * @param {string | number} candidateId
+ * @param {object} candidate
+ */
+export async function updateCandidateInJob(jobId, uploaderId, candidateId, candidate) {
+  const bundle = await loadJobBundle(uploaderId, jobId);
+  if (!bundle) return null;
+  const id = String(candidateId);
+  let found = false;
+  const candidates = bundle.candidates
+    .map((row) => {
+      if (String(row?.id) !== id) return row;
+      found = true;
+      return { ...row, ...candidate };
+    })
+    .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0));
+  if (!found) return null;
+  await saveResults(jobId, uploaderId, { job: bundle.job, candidates, storage: bundle.storage || undefined });
+  return {
+    job: bundle.job,
+    candidates,
+    candidate: candidates.find((row) => String(row?.id) === id) || null,
+  };
+}
+
+/**
+ * @param {string} token
+ * @param {object} invite
+ */
+export async function saveSimulationInvite(token, invite) {
+  const filePath = invitePath(token);
+  if (!filePath) throw new Error("Invalid invite token");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify({ ...invite, token, createdAt: new Date().toISOString() }, null, 2), "utf8");
+}
+
+/**
+ * @param {string} token
+ */
+export async function loadSimulationInvite(token) {
+  const filePath = invitePath(token);
+  if (!filePath) return null;
+  return readJsonFile(filePath);
+}
+
+/**
+ * @param {string} token
+ * @param {object} invite
+ */
+export async function updateSimulationInvite(token, invite) {
+  const filePath = invitePath(token);
+  if (!filePath) throw new Error("Invalid invite token");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify({ ...invite, token, updatedAt: new Date().toISOString() }, null, 2), "utf8");
 }
 
 /**

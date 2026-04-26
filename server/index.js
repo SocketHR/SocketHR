@@ -13,6 +13,10 @@ import {
   listJobsForUser,
   loadJobBundle,
   resolveJobDir,
+  updateCandidateInJob,
+  saveSimulationInvite,
+  loadSimulationInvite,
+  updateSimulationInvite,
 } from "./storage.js";
 import { resumeToText } from "./resumeText.js";
 import {
@@ -41,7 +45,15 @@ function safeParseJSON(raw) {
     .replace(/^```\s*/i, "")
     .replace(/```\s*$/i, "")
     .trim();
-  return JSON.parse(clean);
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const arrayMatch = clean.match(/\[[\s\S]*\]/);
+    if (arrayMatch) return JSON.parse(arrayMatch[0]);
+    const objectMatch = clean.match(/\{[\s\S]*\}/);
+    if (objectMatch) return JSON.parse(objectMatch[0]);
+    throw new Error("Model response was not valid JSON");
+  }
 }
 
 /** @param {unknown} parsed */
@@ -63,6 +75,17 @@ function maxCandidateId(candidates) {
     if (typeof id === "number" && Number.isFinite(id)) m = Math.max(m, id);
   }
   return m;
+}
+
+function safeScore(value, fallback = 5) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, Math.round(n))) : fallback;
+}
+
+function safeStringArray(value) {
+  if (Array.isArray(value)) return value.map((x) => String(x || "")).filter(Boolean);
+  if (typeof value === "string") return value.split("\n").map((x) => x.trim()).filter(Boolean);
+  return [];
 }
 
 /** @param {Array<{ name: string, base64: string, type?: string }>} resumes */
@@ -139,16 +162,65 @@ function buildCandidatesFromExtracted(extracted, scored, resumes, idOffset) {
       id: idOffset + i,
       ...c,
       fileName: resumes[i].name,
-      score: s.score ?? 5,
+      resumeScore: safeScore(s.score),
+      score: safeScore(s.score),
       score_rationale: s.score_rationale || "",
       strengths: s.strengths || [],
       weaknesses: s.weaknesses || [],
       fit_summary: s.fit_summary || "",
+      testStatus: "pending",
+      hireStatus: "none",
+      simulationScore: null,
+      assessmentStrengths: [],
+      assessmentGaps: [],
+      assessmentSummary: "",
+      coachingNote: "",
+      generatedQuestions: [],
+      questionBreakdown: [],
+      simulationReport: null,
+      manualRank: null,
+      interviewNotes: "",
+      interviewDate: "",
+      interviewTime: "",
+      interviewSummary: "",
+      integrityFlag: false,
       storedLocally: false,
       storageWarning: "",
     };
   });
   return rows.sort((a, b) => b.score - a.score);
+}
+
+function normalizeQuestionArray(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.questions)) return parsed.questions;
+  return [];
+}
+
+async function generateSimulationQuestions(job, candidate) {
+  const prompt = `Generate 5 job simulation questions for this candidate and role.
+
+ROLE: ${job.title}
+DESCRIPTION: ${job.description}
+REQUIREMENTS: ${job.requirements}
+CANDIDATE: ${JSON.stringify(candidate)}
+
+Generate exactly:
+1. Two "case_unfolding" questions with phase1_situation, phase1_question, phase2_reveal, phase2_question.
+2. One "prioritization" question with exactly 5 items.
+3. One "short_answer" question asking for a realistic artifact.
+4. One "multiple_choice" judgment question with exactly 4 options.
+
+Make everything specific to the role. Return ONLY a raw JSON array:
+[
+  {"type":"case_unfolding","scenario":"...","phase1_situation":"...","phase1_question":"...","phase2_reveal":"...","phase2_question":"..."},
+  {"type":"prioritization","scenario":"...","question":"...","items":["...","...","...","...","..."]},
+  {"type":"multiple_choice","scenario":"...","question":"...","options":["A) ...","B) ...","C) ...","D) ..."]},
+  {"type":"short_answer","scenario":"...","question":"..."},
+  {"type":"case_unfolding","scenario":"...","phase1_situation":"...","phase1_question":"...","phase2_reveal":"...","phase2_question":"..."}
+]`;
+  const raw = await chatCompletion([{ role: "user", content: prompt }], { maxTokens: 3000, temperature: 0.45 });
+  return normalizeQuestionArray(safeParseJSON(raw));
 }
 
 /** Strip common Markdown so interview drafts work in plain-text email clients. */
@@ -377,6 +449,223 @@ app.post("/api/analyze", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(e.statusCode || 500).json({ error: e.message || "Analysis failed" });
+  }
+});
+
+/**
+ * POST /api/candidates/update
+ * body: { jobId, candidateId, candidate }
+ */
+app.post("/api/candidates/update", async (req, res) => {
+  try {
+    const auth = await getAuthFromRequest(req);
+    const { jobId, candidateId, candidate } = req.body || {};
+    if (!jobId || candidateId == null || !candidate) {
+      return res.status(400).json({ error: "Missing jobId, candidateId, or candidate" });
+    }
+    const updated = await updateCandidateInJob(jobId, auth.email, candidateId, candidate);
+    if (!updated) return res.status(404).json({ error: "Candidate not found" });
+    res.json({ candidate: updated.candidate, candidates: updated.candidates });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Candidate update failed" });
+  }
+});
+
+/**
+ * POST /api/interview/score
+ * body: { jobId, candidateId, job, candidate, notes, date, time }
+ */
+app.post("/api/interview/score", async (req, res) => {
+  try {
+    const auth = await getAuthFromRequest(req);
+    const { jobId, candidateId, job, candidate, notes, date, time } = req.body || {};
+    if (!jobId || candidateId == null || !job || !candidate || !notes) {
+      return res.status(400).json({ error: "Missing interview scoring fields" });
+    }
+
+    const prompt = `Score these interview notes for the candidate against the role.
+
+JOB: ${JSON.stringify(job)}
+CANDIDATE: ${JSON.stringify(candidate)}
+NOTES: ${notes}
+
+Return ONLY raw JSON:
+{"updatedScore":7,"interviewSummary":"one sentence","interviewStrengths":["s1"],"interviewGaps":["g1"]}`;
+    const raw = await chatCompletion([{ role: "user", content: prompt }], { maxTokens: 900, temperature: 0.25 });
+    const parsed = safeParseJSON(raw);
+    const updatedCandidate = {
+      ...candidate,
+      score: safeScore(parsed.updatedScore, candidate.score || candidate.resumeScore || 5),
+      interviewNotes: String(notes || ""),
+      interviewDate: String(date || ""),
+      interviewTime: String(time || ""),
+      interviewSummary: String(parsed.interviewSummary || ""),
+      assessmentStrengths: [...safeStringArray(candidate.assessmentStrengths), ...safeStringArray(parsed.interviewStrengths)],
+      assessmentGaps: [...safeStringArray(candidate.assessmentGaps), ...safeStringArray(parsed.interviewGaps)],
+    };
+    const updated = await updateCandidateInJob(jobId, auth.email, candidateId, updatedCandidate);
+    if (!updated) return res.status(404).json({ error: "Candidate not found" });
+    res.json({ candidate: updated.candidate, candidates: updated.candidates });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Interview scoring failed" });
+  }
+});
+
+/**
+ * POST /api/simulations/generate
+ * body: { job, candidate }
+ */
+app.post("/api/simulations/generate", async (req, res) => {
+  try {
+    await getAuthFromRequest(req);
+    const { job, candidate } = req.body || {};
+    if (!job || !candidate) return res.status(400).json({ error: "Missing job or candidate" });
+    const questions = await generateSimulationQuestions(job, candidate);
+    res.json({ questions });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Simulation generation failed" });
+  }
+});
+
+/**
+ * POST /api/simulations/reprompt
+ * body: { job, candidate, question, instruction }
+ */
+app.post("/api/simulations/reprompt", async (req, res) => {
+  try {
+    await getAuthFromRequest(req);
+    const { job, candidate, question, instruction } = req.body || {};
+    if (!job || !candidate || !question || !instruction) {
+      return res.status(400).json({ error: "Missing reprompt fields" });
+    }
+    const prompt = `Rewrite this simulation question using the instruction, keeping the same question type and JSON shape.
+
+ROLE: ${job.title}
+CANDIDATE: ${JSON.stringify(candidate)}
+ORIGINAL QUESTION: ${JSON.stringify(question)}
+INSTRUCTION: ${instruction}
+
+Return ONLY one raw JSON object.`;
+    const raw = await chatCompletion([{ role: "user", content: prompt }], { maxTokens: 1200, temperature: 0.45 });
+    res.json({ question: safeParseJSON(raw) });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Question reprompt failed" });
+  }
+});
+
+/**
+ * POST /api/simulations/invite
+ * body: { jobId, candidateId, questions }
+ */
+app.post("/api/simulations/invite", async (req, res) => {
+  try {
+    const auth = await getAuthFromRequest(req);
+    const { jobId, candidateId, questions } = req.body || {};
+    if (!jobId || candidateId == null || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "Missing invite fields" });
+    }
+    const bundle = await loadJobBundle(auth.email, jobId);
+    if (!bundle) return res.status(404).json({ error: "Job not found" });
+    const candidate = bundle.candidates.find((row) => String(row?.id) === String(candidateId));
+    if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+    const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    const updatedCandidate = { ...candidate, testStatus: "invited", generatedQuestions: questions, inviteToken: token };
+    const updated = await updateCandidateInJob(jobId, auth.email, candidateId, updatedCandidate);
+    await saveSimulationInvite(token, {
+      uploaderId: auth.email,
+      jobId,
+      candidateId,
+      candidateName: candidate.name || "Candidate",
+      jobTitle: bundle.job.title || "",
+      jobDescription: bundle.job.description || "",
+      jobRequirements: bundle.job.requirements || "",
+      questions,
+      answered: false,
+    });
+    res.json({ token, candidate: updated?.candidate || updatedCandidate, candidates: updated?.candidates || bundle.candidates });
+  } catch (e) {
+    console.error(e);
+    res.status(e.statusCode || 500).json({ error: e.message || "Simulation invite failed" });
+  }
+});
+
+/**
+ * GET /api/simulations/invite/:token
+ */
+app.get("/api/simulations/invite/:token", async (req, res) => {
+  try {
+    const invite = await loadSimulationInvite(req.params.token);
+    if (!invite) return res.status(404).json({ error: "Invite not found" });
+    res.json({
+      candidateName: invite.candidateName,
+      jobTitle: invite.jobTitle,
+      questions: invite.questions,
+      answered: Boolean(invite.answered),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Invite load failed" });
+  }
+});
+
+/**
+ * POST /api/simulations/invite/:token/submit
+ * body: { answers }
+ */
+app.post("/api/simulations/invite/:token/submit", async (req, res) => {
+  try {
+    const invite = await loadSimulationInvite(req.params.token);
+    if (!invite) return res.status(404).json({ error: "Invite not found" });
+    if (invite.answered) return res.json({ ok: true, alreadyAnswered: true });
+
+    const answers = req.body?.answers || {};
+    const answerText = (invite.questions || []).map((q, i) => {
+      const question = q.phase1_question || q.question || q.scenario || `Question ${i + 1}`;
+      return `Q${i + 1} [${q.type}]: ${question}\nAnswer:\n${answers[i] || "(no answer)"}`;
+    }).join("\n\n");
+
+    const prompt = `Score this job simulation.
+
+CANDIDATE: ${invite.candidateName}
+ROLE: ${invite.jobTitle}
+REQUIREMENTS: ${invite.jobRequirements}
+QUESTIONS AND ANSWERS:
+${answerText}
+
+Evaluate communication, situational judgment, adaptability, prioritization, ethics, customer empathy, and role fit.
+Return ONLY raw JSON:
+{"simulationScore":7,"combinedScore":7,"newStrengths":["s1"],"newGaps":["g1"],"assessmentSummary":"one sentence","coachingNote":"tip","integrityFlag":false,"detailedReport":{"communicationScore":7,"communicationNotes":"note","salesAcumenScore":7,"salesAcumenNotes":"note","situationalJudgmentScore":7,"situationalJudgmentNotes":"note","customerEmpathyScore":7,"customerEmpathyNotes":"note","ethicsScore":7,"ethicsNotes":"note","roleFitScore":7,"roleFitNotes":"note"},"questionBreakdown":[{"questionId":1,"score":7,"feedback":"feedback"}]}`;
+    const raw = await chatCompletion([{ role: "user", content: prompt }], { maxTokens: 2200, temperature: 0.25 });
+    const result = safeParseJSON(raw);
+
+    const bundle = await loadJobBundle(invite.uploaderId, invite.jobId);
+    if (!bundle) return res.status(404).json({ error: "Job not found" });
+    const candidate = bundle.candidates.find((row) => String(row?.id) === String(invite.candidateId));
+    if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+
+    const updatedCandidate = {
+      ...candidate,
+      score: safeScore(result.combinedScore, candidate.score || candidate.resumeScore || 5),
+      simulationScore: safeScore(result.simulationScore),
+      testStatus: "completed",
+      assessmentStrengths: safeStringArray(result.newStrengths),
+      assessmentGaps: safeStringArray(result.newGaps),
+      assessmentSummary: String(result.assessmentSummary || ""),
+      coachingNote: String(result.coachingNote || ""),
+      integrityFlag: Boolean(result.integrityFlag),
+      simulationReport: result.detailedReport || null,
+      questionBreakdown: Array.isArray(result.questionBreakdown) ? result.questionBreakdown : [],
+    };
+    await updateCandidateInJob(invite.jobId, invite.uploaderId, invite.candidateId, updatedCandidate);
+    await updateSimulationInvite(req.params.token, { ...invite, answered: true, answers, result });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Simulation submit failed" });
   }
 });
 
