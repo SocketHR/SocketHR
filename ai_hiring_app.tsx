@@ -1,451 +1,891 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
-import AppNav from "./src/components/hiring/AppNav";
-import CandidatePortal from "./src/components/hiring/CandidatePortal";
-import SimulationEditor from "./src/components/hiring/SimulationEditor";
-import SimulationReportModal from "./src/components/hiring/SimulationReportModal";
-import { safeCandidate, safeNum, safeStr, scorePillClass } from "./src/components/hiring/mockUtils";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import type { Components } from "react-markdown";
+import { DEFAULT_API_BASE, useSockethrRuntimeConfig } from "./src/lib/useSockethrRuntimeConfig";
 
-function ScorePill({ score }: { score: any }) {
-  const s = safeNum(score, 0);
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${scorePillClass(s)}`}>{s}/10</span>;
+const RECRUITER_LOADING_TIPS = [
+  "Tip: Ask how they handled their biggest failure — résumés rarely tell that story.",
+  "Tip: The best hires often explain trade-offs, not just victories.",
+  "Tip: If they ask great questions in the screen, note it. Curiosity scales.",
+  "Tip: Culture fit isn't \"same personality\" — it's values and how they disagree.",
+  "Tip: Red flag: vague ownership on team projects. Dig for what they actually shipped.",
+  "Tip: Compare their stories to the job's hardest day, not the job description buzzwords.",
+  "Tip: Reference checks: ask what they'd change if they hired this person again.",
+  "Tip: Strong candidates can explain why they left without trashing the last place.",
+  "Tip: Time-box take-home work — respect for your process starts in the interview.",
+  "Tip: Note who follows up thoughtfully. It predicts how they'll treat candidates you pass on.",
+  "Tip: Pair a technical question with \"what would you do if you were stuck for two days?\"",
+  "Tip: Hiring is a forecast. Look for patterns across roles, not one shiny bullet.",
+];
+
+/** Match server: trim, lowercase, collapse internal whitespace. */
+function normalizeJobTitleClient(title: string) {
+  return String(title || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
-function StatusPill({ status }: { status: string }) {
-  const label: Record<string, string> = { pending: "Not Tested", invited: "Invited", completed: "Tested" };
-  return <span className="rounded border border-paper-line px-2 py-0.5 text-xs text-ink-faint">{label[status] || "Not Tested"}</span>;
+function buildInterviewMailto(opts: { to?: string; subject: string; body: string }): string {
+  // Use encodeURIComponent (spaces → %20), not URLSearchParams (+), so mail clients show real spaces.
+  const query = `subject=${encodeURIComponent(opts.subject)}&body=${encodeURIComponent(opts.body)}`;
+  const to = opts.to?.trim() ?? "";
+  return to ? `mailto:${encodeURIComponent(to)}?${query}` : `mailto:?${query}`;
 }
 
+const assistantMarkdownComponents: Components = {
+  p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="my-1 list-disc space-y-0.5 pl-4">{children}</ul>,
+  ol: ({ children }) => <ol className="my-1 list-decimal space-y-0.5 pl-4">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      className="text-accent underline underline-offset-2"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  ),
+  pre: ({ children }) => (
+    <pre className="my-1 overflow-x-auto rounded-lg bg-paper-line/30 p-2 font-mono text-[12px] text-ink">{children}</pre>
+  ),
+  code: ({ className, children }) =>
+    className ? (
+      <code className={className}>{children}</code>
+    ) : (
+      <code className="rounded bg-paper-line/40 px-1 font-mono text-[12px] text-ink">{children}</code>
+    ),
+};
+
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <div className="assistant-md [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+      <ReactMarkdown remarkPlugins={[remarkBreaks]} components={assistantMarkdownComponents}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+// ── UI Primitives ─────────────────────────────────────────────────────────────
+function Spinner({ label = "Processing…" }: { label?: string }) {
+  return (
+    <div className="flex items-start gap-3 font-ui text-sm text-ink-muted">
+      <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent/60" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      </svg>
+      <span key={label} className="tip-fade max-w-md text-left leading-snug">{label}</span>
+    </div>
+  );
+}
+
+function ScorePill({ score }: { score: number }) {
+  const style =
+    score >= 8
+      ? "bg-emerald-50/80 text-emerald-800"
+      : score >= 6
+        ? "bg-sky-50/80 text-sky-800"
+        : score >= 4
+          ? "bg-amber-50/80 text-amber-800"
+          : "bg-red-50/80 text-red-800";
+  return <span className={`rounded-full px-2.5 py-0.5 font-ui text-xs font-semibold tabular-nums ${style}`}>{score}/10</span>;
+}
+
+/** Two-step flow: visual progress only (no “Step N of M” copy). */
+function WizardProgress({ step, total = 2 }: { step: number; total?: number }) {
+  const pct = (step / total) * 100;
+  return (
+    <div
+      className="mb-6"
+      role="progressbar"
+      aria-valuenow={step}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-label={`Step ${step} of ${total}`}
+    >
+      <div className="h-1 overflow-hidden rounded-full bg-paper-line/35">
+        <div
+          className="h-full rounded-full bg-accent/40 transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Nav({
+  isLoggedIn,
+  userName,
+  onLogin,
+  onLogout,
+  onHome,
+  apiBase = DEFAULT_API_BASE,
+  apiConfigLoaded = true,
+}: {
+  isLoggedIn: boolean;
+  userName?: string | null;
+  onLogin: () => void;
+  onLogout: () => void;
+  onHome: () => void;
+  apiBase?: string;
+  apiConfigLoaded?: boolean;
+}) {
+  const showLocalApiWarning =
+    apiConfigLoaded &&
+    typeof window !== "undefined" &&
+    !/^localhost$/i.test(window.location.hostname) &&
+    window.location.hostname !== "127.0.0.1" &&
+    (apiBase.includes("127.0.0.1") || apiBase.includes("localhost"));
+
+  return (
+    <>
+      {showLocalApiWarning && (
+        <div className="bg-amber-50/60 px-6 py-2.5 font-ui text-left text-xs text-amber-900/80 sm:px-10">
+          This site is configured to call a <strong>local</strong> API URL. Other devices cannot reach it.
+          Set <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">apiBase</code> in{" "}
+          <code className="rounded bg-amber-100/50 px-1 font-mono text-[11px]">/runtime-config.json</code> to your public
+          HTTPS API.
+        </div>
+      )}
+      <nav className="sticky top-0 z-10 flex items-center justify-between bg-paper/90 px-6 py-4 backdrop-blur-sm font-ui sm:px-10">
+        <button type="button" className="flex cursor-pointer items-center gap-2 text-left transition-opacity duration-150 hover:opacity-60" onClick={onHome}>
+          <span className="text-lg font-bold tracking-tight text-ink">SocketHR</span>
+        </button>
+        {isLoggedIn ? (
+          <div className="flex items-center gap-3">
+            <span className="hidden text-sm text-ink-muted sm:block">{userName || "Signed in"}</span>
+            <button type="button" onClick={onLogout} className="rounded-lg px-2 py-1 text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted">
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onLogin}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-faint transition-all duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
+          >
+            Log in
+          </button>
+        )}
+      </nav>
+    </>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
 export function HiringApp() {
-  const { apiBase } = useSockethrRuntimeConfig();
-  const { status } = useSession();
+  const { apiBase, configLoaded: apiConfigLoaded } = useSockethrRuntimeConfig();
+  const { data: session, status } = useSession();
   const isLoggedIn = status === "authenticated";
-  const [hashToken] = useState(() => {
-    try {
-      const h = window.location.hash;
-      const m = h.match(/[?&]?token=([a-z0-9]+)/i);
-      return m ? m[1] : null;
-    } catch {
-      return null;
-    }
-  });
+  const userName = session?.user?.name ?? session?.user?.email ?? null;
 
-  const [page, setPage] = useState("landing");
-  const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [activeJob, setActiveJob] = useState<any>(null);
-  const [files, setFiles] = useState<any[]>([]);
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [selected, setSelected] = useState<any>(null);
-  const [chat, setChat] = useState<any[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [emailDraft, setEmailDraft] = useState("");
-  const [emailState, setEmailState] = useState("idle");
-  const [inviteLink, setInviteLink] = useState("");
-  const [showSimEditor, setShowSimEditor] = useState(false);
-  const [showSimReport, setShowSimReport] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const fileRef = useRef<any>();
-
-  const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return candidates;
-    const q = searchQuery.toLowerCase();
-    return candidates.filter((c) => safeStr(c.name).toLowerCase().includes(q) || safeStr(c.email).toLowerCase().includes(q));
-  }, [candidates, searchQuery]);
-
-  const fetchWithAuth = useCallback(
-    async (path: string, options: RequestInit = {}) => {
+  const postJson = useCallback(
+    async (path: string, body: unknown) => {
       const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
       const tokenJson = await tokenRes.json().catch(() => ({}));
-      const token = tokenRes.ok && typeof tokenJson?.token === "string" ? tokenJson.token : "";
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
       const base = apiBase.replace(/\/$/, "");
       const res = await fetch(`${base}${path}`, {
-        ...options,
+        method: "POST",
         headers: {
-          ...(options.headers || {}),
+          "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
       return data;
     },
     [apiBase]
   );
 
-  useEffect(() => {
-    if (!(window as any)._socketTokens) (window as any)._socketTokens = {};
-    if (!(window as any)._socketResults) (window as any)._socketResults = {};
-  }, []);
-
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const done = Object.entries((window as any)._socketResults || {});
-      if (!done.length) return;
-      done.forEach(([token, result]: any) => {
-        const info = (window as any)._socketTokens?.[token];
-        if (!info) return;
-        setCandidates((prev) =>
-          prev.map((c) =>
-            c.id === info.candidateId
-              ? safeCandidate({
-                  ...c,
-                  score: safeNum(result.combinedScore, c.resumeScore),
-                  simulationScore: safeNum(result.simulationScore),
-                  testStatus: "completed",
-                  assessmentStrengths: result.newStrengths || [],
-                  assessmentGaps: result.newGaps || [],
-                  assessmentSummary: result.assessmentSummary || "",
-                  coachingNote: result.coachingNote || "",
-                  integrityFlag: !!result.integrityFlag,
-                  simulationReport: result.detailedReport || null,
-                  questionBreakdown: result.questionBreakdown || [],
-                })
-              : c
-          )
-        );
-        delete (window as any)._socketResults[token];
+  const getJson = useCallback(
+    async (path: string) => {
+      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
+      const base = apiBase.replace(/\/$/, "");
+      const res = await fetch(`${base}${path}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || `${path} failed (${res.status})`);
+      return data;
+    },
+    [apiBase]
+  );
 
-  function generateToken(candidateId: any, candidateName: string, questions: any[]) {
-    const token = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-    (window as any)._socketTokens[token] = {
-      candidateId,
-      candidateName,
-      jobTitle: job.title,
-      questions,
-      answered: false,
-    };
-    return token;
+  const [page, setPage] = useState("home");
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+  const [job, setJob] = useState({ title: "", description: "", requirements: "", culture: "" });
+  const [resumeFiles, setResumeFiles] = useState<{ name: string; base64: string; type: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [candidates, setCandidates] = useState<
+    { id?: string; name?: string; score?: number; recent_role?: string; fit_summary?: string; score_rationale?: string; skills?: string[]; strengths?: string[]; weaknesses?: string[]; email?: string; phone?: string }[]
+  >([]);
+  const [loadingTipIndex, setLoadingTipIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<(typeof candidates)[0] | null>(null);
+  const [chat, setChat] = useState<{ role: string; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailState, setEmailState] = useState("idle");
+  const [dragging, setDragging] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  type SavedListing = { jobId: string; title: string; candidateCount: number; updatedAt: string };
+  const [savedListings, setSavedListings] = useState<SavedListing[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
+  const [jobTitleDuplicateHint, setJobTitleDuplicateHint] = useState("");
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat]);
+
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingTipIndex(0);
+    const id = window.setInterval(() => {
+      setLoadingTipIndex((i) => (i + 1) % RECRUITER_LOADING_TIPS.length);
+    }, 17500);
+    return () => window.clearInterval(id);
+  }, [loading]);
+
+  function requireLogin(nav: () => void) {
+    if (isLoggedIn) { nav(); return; }
+    setPendingNav(() => nav);
+    setPage("login");
   }
 
-  async function addFiles(rawFiles: any) {
-    const valid = Array.from(rawFiles as FileList | File[]).filter(
-      (f: any) => f.type === "application/pdf" || f.name.endsWith(".txt")
-    ) as File[];
-    const entries: any[] = [];
-    for (const f of valid) {
-      const data = await new Promise<string>((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(String(r.result).split(",")[1]);
-        r.onerror = () => rej(new Error("read failed"));
-        r.readAsDataURL(f);
-      });
-      entries.push({ name: f.name, type: f.type, data });
+  function handleLogin() {
+    signIn("google");
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (pendingNav) { pendingNav(); setPendingNav(null); }
+    else setPage(candidates.length ? "results" : "home");
+  }, [isLoggedIn, pendingNav, candidates.length]);
+
+  const refreshSavedListings = useCallback(async () => {
+    if (!isLoggedIn) {
+      setSavedListings([]);
+      return;
     }
-    setFiles((prev) => {
-      const ex = new Set(prev.map((f) => f.name));
-      return [...prev, ...entries.filter((e) => !ex.has(e.name))];
+    setListingsLoading(true);
+    try {
+      const data = await getJson("/api/jobs");
+      const jobs = (data as { jobs?: SavedListing[] }).jobs;
+      setSavedListings(Array.isArray(jobs) ? jobs : []);
+    } catch {
+      setSavedListings([]);
+    }
+    setListingsLoading(false);
+  }, [getJson, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setSavedListings([]);
+      return;
+    }
+    if (page !== "home") return;
+    void refreshSavedListings();
+  }, [isLoggedIn, page, refreshSavedListings]);
+
+  function resetNewListingWizard() {
+    setActiveJobId(null);
+    setJob({ title: "", description: "", requirements: "", culture: "" });
+    setResumeFiles([]);
+    setCandidates([]);
+    setSelected(null);
+    setChat([]);
+    setChatInput("");
+    setEmailDraft("");
+    setEmailState("idle");
+    setJobTitleDuplicateHint("");
+  }
+
+  async function openSavedListing(jobId: string) {
+    try {
+      const data = (await getJson(`/api/jobs/${encodeURIComponent(jobId)}`)) as {
+        jobId: string;
+        job: { title: string; description: string; requirements: string; culture: string };
+        candidates: typeof candidates;
+      };
+      setJob(data.job);
+      setCandidates(data.candidates);
+      setActiveJobId(data.jobId);
+      setSelected(null);
+      setChat([]);
+      setChatInput("");
+      setEmailDraft("");
+      setEmailState("idle");
+      setResumeFiles([]);
+      setPage("results");
+      void refreshSavedListings();
+    } catch (e) {
+      console.error(e);
+      alert("Could not open listing: " + (e as Error).message);
+    }
+  }
+
+  async function handleFileSelect(
+    e: ChangeEvent<HTMLInputElement> | { target: { files: FileList | File[]; value: string } }
+  ) {
+    const raw = e.target.files;
+    const files = Array.isArray(raw) ? raw : Array.from(raw ?? []);
+    if (!files.length) return;
+    const newFiles: { name: string; base64: string; type: string }[] = [];
+    for (const file of files) {
+      const base64 = await readFileAsBase64(file);
+      newFiles.push({ name: file.name, base64, type: file.type });
+    }
+    setResumeFiles((prev) => {
+      const existing = new Set(prev.map((f) => f.name));
+      return [...prev, ...newFiles.filter((f) => !existing.has(f.name))];
+    });
+    e.target.value = "";
+  }
+
+  function readFileAsBase64(file: File) {
+    return new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => { res((r.result as string).split(",")[1]); };
+      r.onerror = () => rej(new Error("Read failed"));
+      r.readAsDataURL(file);
     });
   }
 
+  function removeFile(name: string) {
+    setResumeFiles((prev) => prev.filter((f) => f.name !== name));
+  }
+
   async function analyzeResumes() {
-    if (!files.length) return;
-    setBusy(true);
-    setError("");
+    if (!resumeFiles.length) return alert("Please upload at least one resume.");
+    setLoading(true);
+    if (!activeJobId) setCandidates([]);
     try {
-      const data = await fetchWithAuth("/api/analyze", {
+      const tokenRes = await fetch("/api/mac-token", { cache: "no-store" });
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      const token =
+        tokenRes.ok && typeof (tokenJson as { token?: unknown }).token === "string"
+          ? (tokenJson as { token: string }).token
+          : "";
+      const base = apiBase.replace(/\/$/, "");
+      const body = {
+        job,
+        resumes: resumeFiles.map((f) => ({ name: f.name, base64: f.base64, type: f.type })),
+        ...(activeJobId ? { existingJobId: activeJobId } : {}),
+      };
+      const res = await fetch(`${base}/api/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job,
-          resumes: files.map((f) => ({ name: f.name, base64: f.data, type: f.type })),
-          ...(activeJob?.id ? { existingJobId: activeJob.id } : {}),
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
       });
-      const merged = Array.isArray(data?.candidates) ? data.candidates.map((c: any) => safeCandidate(c)) : [];
-      const newJob = { id: data?.jobId || Date.now(), title: job.title, candidateCount: merged.length };
-      setJobs((prev) => [newJob, ...prev.filter((j) => j.id !== newJob.id)]);
-      setActiveJob(newJob);
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        existingJobId?: string;
+        candidates?: typeof candidates;
+        storage?: { skippedCount?: number };
+        jobId?: string;
+      };
+      if (res.status === 409) {
+        alert(
+          data.error ||
+            "You already have a listing for this title. Open it from the home screen to add résumés."
+        );
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || `Analyze failed (${res.status})`);
+      const merged = data.candidates ?? [];
       setCandidates(merged);
-      setPage("ats");
-    } catch (e: any) {
-      setError(e?.message || "Analysis failed");
+      if (typeof data.jobId === "string") setActiveJobId(data.jobId);
+      const skippedCount = Number(data.storage?.skippedCount || 0);
+      if (skippedCount > 0) {
+        alert(`${skippedCount} resume(s) were ranked but not stored because no applicant email was detected.`);
+      }
+      setResumeFiles([]);
+      setPage("results");
+      void refreshSavedListings();
+    } catch (err) {
+      console.error(err);
+      alert("Analysis failed: " + (err as Error).message);
     }
-    setBusy(false);
+    setLoading(false);
   }
 
   async function sendChat() {
-    if (!chatInput.trim() || chatLoading || !selected) return;
+    if (!chatInput.trim() || chatLoading) return;
     const msg = chatInput.trim();
     setChatInput("");
-    const msgs = [...chat, { role: "user", content: msg }];
-    setChat(msgs);
+    const newChat = [...chat, { role: "user", content: msg }];
+    setChat(newChat);
     setChatLoading(true);
     try {
-      const data = await fetchWithAuth("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job, selected, messages: msgs }),
+      const { reply } = await postJson("/api/chat", {
+        job, selected,
+        messages: newChat.map((m) => ({ role: m.role, content: m.content })),
       });
-      setChat([...msgs, { role: "assistant", content: data?.reply || "No response." }]);
+      setChat([...newChat, { role: "assistant", content: reply }]);
     } catch {
-      setChat([...msgs, { role: "assistant", content: "Error - try again." }]);
+      setChat([...newChat, { role: "assistant", content: "Sorry, I ran into an error. Please try again." }]);
     }
     setChatLoading(false);
   }
 
-  async function genFollowupEmail() {
-    if (!selected) return;
+  async function generateEmail() {
     setEmailState("generating");
     try {
-      const data = await fetchWithAuth("/api/email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job, selected }),
-      });
-      setEmailDraft(data?.draft || "");
+      const { draft } = await postJson("/api/email", { job, selected });
+      setEmailDraft(draft);
       setEmailState("editing");
     } catch {
       setEmailState("idle");
+      alert("Failed to generate email.");
     }
   }
 
-  function sendWithQuestions(questions: any[]) {
-    const c = selected;
-    const token = generateToken(c.id, c.name, questions);
-    const baseUrl = window.location.href.split("#")[0];
-    const link = `${baseUrl}#token=${token}`;
-    setInviteLink(link);
-    setCandidates((prev) =>
-      prev.map((x) => (x.id === c.id ? safeCandidate({ ...x, testStatus: "invited", inviteToken: token, generatedQuestions: questions }) : x))
-    );
-    setSelected((prev: any) => safeCandidate({ ...prev, testStatus: "invited", inviteToken: token, generatedQuestions: questions }));
-    setShowSimEditor(false);
+  function openInterviewInMailApp() {
+    const subject = job.title.trim() ? `Interview opportunity: ${job.title.trim()}` : "Interview opportunity";
+    const href = buildInterviewMailto({
+      to: selected?.email,
+      subject,
+      body: emailDraft,
+    });
+    window.location.href = href;
   }
 
-  if (hashToken) return <CandidatePortal token={hashToken} />;
+  const cutoff = Math.max(1, Math.ceil(candidates.length / 2));
+  const topCandidates = candidates.slice(0, cutoff);
 
-  if (page === "landing") {
-    return (
-      <div className="min-h-screen bg-paper text-ink">
-        <div className="mx-auto max-w-7xl px-8 py-6">
-          <div className="flex items-center justify-between border-b border-paper-line pb-4">
-            <span className="text-lg font-bold">SocketHR</span>
-            <button type="button" onClick={() => setPage("login")} className="rounded-lg bg-accent/10 px-4 py-2 text-sm font-bold text-accent">
-              Get started
-            </button>
-          </div>
-          <div className="py-20 text-center">
-            <h1 className="mb-6 text-5xl font-black tracking-tight">Don&apos;t ask what candidates have done. Simulate what they&apos;ll do.</h1>
-            <p className="mx-auto mb-10 max-w-2xl text-lg text-ink-muted">
-              A clean, modern ATS that ranks resumes, runs candidate simulations, and helps you make better hiring decisions faster.
-            </p>
-            <button type="button" onClick={() => setPage("login")} className="rounded-xl bg-accent/10 px-8 py-4 text-base font-bold text-accent">
-              Start hiring smarter
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const inputClass =
+    "w-full rounded-lg bg-paper-line/20 px-3.5 py-2.5 font-ui text-sm text-ink placeholder:text-ink-faint/50 transition-colors duration-150 focus:bg-paper-line/30 focus:outline-none";
+  const btnPrimary =
+    "rounded-lg bg-accent/10 font-ui text-sm font-semibold text-accent transition-all duration-150 hover:bg-accent/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30";
+  const btnSecondary =
+    "rounded-lg bg-paper-line/20 font-ui text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-paper-line/35 hover:text-ink active:scale-[0.98]";
 
-  if (page === "login") {
-    return (
-      <div className="flex min-h-screen flex-col bg-paper">
-        <div className="cursor-pointer px-6 py-4 text-sm font-bold text-ink" onClick={() => setPage("landing")}>SocketHR</div>
-        <div className="flex flex-1 items-center justify-center px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-paper-line bg-paper p-8">
-            <h2 className="mb-1 text-2xl font-bold text-ink">Sign in</h2>
-            <p className="mb-6 text-sm text-ink-faint">Access your hiring platform</p>
-            <button type="button" onClick={() => signIn("google")} className="w-full rounded-lg bg-accent/10 py-2.5 font-bold text-accent">
-              Continue with Google
-            </button>
-            <button type="button" onClick={() => setPage("onboard")} className="mt-3 w-full rounded-lg border border-paper-line py-2.5 text-sm text-ink">
-              Continue with demo account
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const shell = "hiring-shell flex flex-col";
+  const content = "fade-in-up mx-auto w-full max-w-2xl px-6 py-10 text-left sm:px-10";
 
-  if (page === "onboard") {
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: HOME
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "home")
     return (
-      <div className="min-h-screen bg-paper">
-        <AppNav onHome={() => setPage("landing")} loggedIn={isLoggedIn} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-        <div className="mx-auto max-w-xl px-4 py-10">
-          <div className="rounded-2xl border border-paper-line bg-paper p-8">
-            <h2 className="mb-6 text-lg font-bold text-ink">Create Job Listing</h2>
-            <div className="flex flex-col gap-4">
-              <input className="rounded-lg border border-paper-line bg-paper px-4 py-2.5 text-sm" placeholder="Job title" value={job.title} onChange={(e) => setJob({ ...job, title: e.target.value })} />
-              <textarea rows={4} className="rounded-lg border border-paper-line bg-paper px-4 py-2.5 text-sm" placeholder="Job description" value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
-              <textarea rows={3} className="rounded-lg border border-paper-line bg-paper px-4 py-2.5 text-sm" placeholder="Requirements" value={job.requirements} onChange={(e) => setJob({ ...job, requirements: e.target.value })} />
-              <textarea rows={2} className="rounded-lg border border-paper-line bg-paper px-4 py-2.5 text-sm" placeholder="Culture & fit" value={job.culture} onChange={(e) => setJob({ ...job, culture: e.target.value })} />
-              <button type="button" disabled={!job.title || !job.description || !job.requirements} onClick={() => setPage("upload")} className="rounded-xl bg-accent/10 py-3 text-sm font-bold text-accent disabled:opacity-50">
-                Next: Upload Resumes
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (page === "upload") {
-    return (
-      <div className="min-h-screen bg-paper">
-        <AppNav onHome={() => setPage("landing")} loggedIn={isLoggedIn} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-        <div className="mx-auto max-w-2xl px-4 py-10">
-          <div className="rounded-2xl border border-paper-line bg-paper p-8">
-            <h2 className="mb-5 text-lg font-bold text-ink">Upload Resumes</h2>
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                addFiles(e.dataTransfer.files);
-              }}
-              onClick={() => fileRef.current?.click()}
-              className="cursor-pointer rounded-2xl border-2 border-dashed border-paper-line p-10 text-center"
-            >
-              <p className="text-sm text-ink-muted">Drag and drop PDF/TXT files here</p>
-              <input ref={fileRef} type="file" accept=".pdf,.txt" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
-            </div>
-            {files.length > 0 && (
-              <div className="mt-4 flex max-h-48 flex-col gap-2 overflow-y-auto">
-                {files.map((f) => (
-                  <div key={f.name} className="flex items-center justify-between rounded-xl border border-paper-line px-4 py-2.5">
-                    <span className="truncate text-sm text-ink">{f.name}</span>
-                    <button type="button" onClick={() => setFiles((prev) => prev.filter((x) => x.name !== f.name))} className="text-xs text-red-600">Remove</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
-            <div className="mt-5 flex gap-3">
-              <button type="button" onClick={() => setPage("onboard")} className="flex-1 rounded-xl border border-paper-line py-2.5 text-sm text-ink">Back</button>
-              <button type="button" disabled={busy || !files.length} onClick={analyzeResumes} className="flex-1 rounded-xl bg-accent/10 py-2.5 text-sm font-bold text-accent disabled:opacity-50">
-                {busy ? "Analyzing..." : `Analyze ${files.length} Resume(s)`}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (page === "ats") {
-    return (
-      <div className="min-h-screen bg-paper">
-        <AppNav onHome={() => setPage("landing")} loggedIn={isLoggedIn} onLogout={() => signOut()} onNewJob={() => { setJob({ title: "", description: "", requirements: "", culture: "" }); setFiles([]); setPage("onboard"); }} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-        <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-sm font-bold text-ink">{searchQuery ? `Search: "${searchQuery}"` : activeJob?.title || "Candidates"}</h1>
-              <p className="text-xs text-ink-faint">{filtered.length} candidate(s)</p>
-            </div>
-            <button type="button" onClick={() => setPage("upload")} className="rounded-lg bg-accent/10 px-4 py-2 text-xs font-bold text-accent">+ Upload Resumes</button>
-          </div>
-          <div className="overflow-x-auto rounded-xl border border-paper-line">
-            <table className="w-full text-sm">
-              <thead className="border-b border-paper-line bg-paper-line/10">
-                <tr>
-                  {["Candidate", "Role", "Resume", "Simulation", "Combined", "Status"].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-ink-faint">{h}</th>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-6xl">AI-assisted<br />hiring</h1>
+          <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
+            Add resumes, get ranked candidates with scores and summaries — then dig in with interview tools.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              resetNewListingWizard();
+              setPage("job");
+            }}
+            className={`mt-10 px-7 py-3 ${btnPrimary}`}
+          >
+            Create job listing
+          </button>
+          {isLoggedIn && (listingsLoading || savedListings.length > 0) && (
+            <div className="mt-14 w-full max-w-md">
+              {listingsLoading && savedListings.length === 0 ? (
+                <p className="font-ui text-sm text-ink-faint">Loading…</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {savedListings.map((row) => (
+                    <li key={row.jobId}>
+                      <button
+                        type="button"
+                        onClick={() => void openSavedListing(row.jobId)}
+                        className="w-full rounded-lg py-2 text-left text-xl font-bold leading-snug tracking-tight text-ink-muted transition-colors duration-150 hover:bg-paper-line/15 hover:text-ink sm:text-2xl"
+                      >
+                        {row.title || "Untitled role"}
+                      </button>
+                    </li>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c) => (
-                  <tr key={c.id} className="cursor-pointer border-b border-paper-line/60 hover:bg-paper-line/10" onClick={() => { setSelected(c); setPage("profile"); }}>
-                    <td className="px-4 py-3 text-xs font-semibold text-ink">{c.name}</td>
-                    <td className="px-4 py-3 text-xs text-ink-muted">{c.recent_role}</td>
-                    <td className="px-4 py-3"><ScorePill score={c.resumeScore} /></td>
-                    <td className="px-4 py-3">{c.simulationScore != null ? <ScorePill score={c.simulationScore} /> : <span className="text-xs text-ink-faint">-</span>}</td>
-                    <td className="px-4 py-3"><ScorePill score={c.score} /></td>
-                    <td className="px-4 py-3"><StatusPill status={c.testStatus} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: LOGIN
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "login")
+    return (
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => {}} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content} style={{ maxWidth: "24rem" }}>
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Sign in</h2>
+          <div className="mt-8 flex flex-col gap-3">
+            <p className="font-ui text-sm text-ink-muted">Sign in with Google to see the full ranked list — including the lower half of candidates.</p>
+            <button type="button" onClick={handleLogin} className={`py-2.5 ${btnPrimary}`}>Continue with Google</button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPage(candidates.length ? "results" : "home")}
+            className="mt-8 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
+          >
+            ← Back
+          </button>
+        </div>
+      </div>
+    );
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: JOB FORM
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "job")
+    return (
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <WizardProgress step={1} />
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Create job listing</h2>
+          <div className="mt-8 flex flex-col gap-5">
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job title <span className="text-accent/60">*</span></label>
+              <input
+                className={inputClass}
+                placeholder="e.g. Senior Software Engineer"
+                value={job.title}
+                onChange={(e) => {
+                  setJobTitleDuplicateHint("");
+                  setJob({ ...job, title: e.target.value });
+                }}
+              />
+              {jobTitleDuplicateHint ? (
+                <p className="mt-2 font-ui text-sm text-amber-800/90">{jobTitleDuplicateHint}</p>
+              ) : null}
+            </div>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Job description <span className="text-accent/60">*</span></label>
+              <textarea rows={4} className={`${inputClass} resize-none`} placeholder="Describe the role, key responsibilities, day-to-day…" value={job.description} onChange={(e) => setJob({ ...job, description: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Requirements <span className="text-accent/60">*</span></label>
+              <textarea rows={3} className={`${inputClass} resize-none`} placeholder="Required skills, years of experience, education, certifications…" value={job.requirements} onChange={(e) => setJob({ ...job, requirements: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-1.5 block font-ui text-sm font-medium text-ink-muted">Company culture and fit</label>
+              <textarea rows={2} className={`${inputClass} resize-none`} placeholder="Values, team vibe, ideal personality traits, working style…" value={job.culture} onChange={(e) => setJob({ ...job, culture: e.target.value })} />
+            </div>
+            <button
+              type="button"
+              disabled={!job.title || !job.description || !job.requirements}
+              onClick={() => {
+                const norm = normalizeJobTitleClient(job.title);
+                if (
+                  isLoggedIn &&
+                  !activeJobId &&
+                  savedListings.some((l) => normalizeJobTitleClient(l.title) === norm)
+                ) {
+                  setJobTitleDuplicateHint(
+                    "You already have a listing for this title. Open it from the home screen to add résumés."
+                  );
+                  return;
+                }
+                setJobTitleDuplicateHint("");
+                setPage("upload");
+              }}
+              className={`mt-1 py-3 ${btnPrimary}`}
+            >
+              Continue
+            </button>
           </div>
         </div>
       </div>
     );
-  }
 
-  if (page === "profile" && selected) {
-    const c = candidates.find((x) => x.id === selected.id) || selected;
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: UPLOAD
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "upload") {
+    function onDrop(e: DragEvent<HTMLDivElement>) {
+      e.preventDefault();
+      setDragging(false);
+      const files = Array.from(e.dataTransfer.files).filter(
+        (f: File) => f.type === "application/pdf" || f.name.endsWith(".txt") || f.name.endsWith(".doc") || f.name.endsWith(".docx")
+      );
+      if (!files.length) return alert("Please drop PDF or text files.");
+      handleFileSelect({ target: { files, value: "" } });
+    }
+
     return (
-      <div className="min-h-screen bg-paper">
-        <AppNav onHome={() => setPage("landing")} loggedIn={isLoggedIn} onLogout={() => signOut()} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-        {showSimEditor && <SimulationEditor candidate={c} onClose={() => setShowSimEditor(false)} onSendWithQuestions={sendWithQuestions} />}
-        {showSimReport && <SimulationReportModal candidate={c} onClose={() => setShowSimReport(false)} />}
-        <div className="mx-auto max-w-3xl px-4 py-6">
-          <button type="button" onClick={() => setPage("ats")} className="mb-5 text-xs text-ink-faint">Back to pipeline</button>
-          <div className="mb-4 rounded-2xl border border-paper-line bg-paper p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-ink">{c.name}</h2>
-                <p className="text-sm text-ink-muted">{c.recent_role}</p>
-                <p className="mt-1 text-xs text-ink-faint">{c.email}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <ScorePill score={c.score} />
-                <StatusPill status={c.testStatus} />
-              </div>
-            </div>
-            <p className="mt-4 text-sm italic text-ink-muted">{c.fit_summary}</p>
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <WizardProgress step={2} />
+          <h2 className="text-3xl font-bold tracking-tight text-ink">Upload résumés</h2>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
+            aria-label="Upload résumés: drop PDF or text files, or click to choose files."
+            className={`mt-8 flex cursor-pointer flex-col items-center rounded-xl py-14 transition-all duration-200 ${
+              dragging ? "bg-accent-soft/30" : "bg-paper-line/15 hover:bg-paper-line/25"
+            }`}
+          >
+            <svg className="h-10 w-10 text-ink-faint/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={handleFileSelect} />
           </div>
 
-          <div className="mb-4 rounded-2xl border border-paper-line bg-paper p-5">
-            <h3 className="mb-1 text-sm font-semibold text-ink">10-Minute Simulation</h3>
-            <p className="mb-3 text-xs text-ink-faint">Review and send simulation to the candidate.</p>
-            {c.testStatus !== "completed" ? (
-              <button type="button" onClick={() => setShowSimEditor(true)} className="rounded-xl bg-accent/10 px-4 py-2 text-xs font-bold text-accent">
-                Review & Send Simulation
-              </button>
-            ) : (
-              <button type="button" onClick={() => setShowSimReport(true)} className="rounded-xl bg-accent/10 px-4 py-2 text-xs font-bold text-accent">
-                View Simulation Report
-              </button>
-            )}
-            {inviteLink && <p className="mt-3 break-all text-xs text-ink-faint">{inviteLink}</p>}
-          </div>
-
-          <div className="mb-4 rounded-2xl border border-paper-line bg-paper p-5">
-            <h3 className="mb-3 text-sm font-semibold text-ink">Send Email</h3>
-            {emailState === "idle" && (
-              <button type="button" onClick={genFollowupEmail} className="rounded-lg bg-accent/10 px-4 py-2 text-xs font-semibold text-accent">
-                Generate Follow-up
-              </button>
-            )}
-            {emailState === "generating" && <p className="text-sm text-ink-faint">Drafting...</p>}
-            {emailState === "editing" && (
-              <div>
-                <textarea rows={8} className="mb-3 w-full rounded-xl border border-paper-line bg-paper-line/20 px-3 py-2 text-sm" value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} />
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setEmailState("sent")} className="rounded-lg bg-accent/10 px-4 py-2 text-sm font-bold text-accent">Send</button>
-                  <button type="button" onClick={() => setEmailState("idle")} className="rounded-lg border border-paper-line px-4 py-2 text-sm text-ink">Discard</button>
-                </div>
-              </div>
-            )}
-            {emailState === "sent" && <p className="text-sm text-emerald-700">Sent to {c.email || c.name}</p>}
-          </div>
-
-          <div className="rounded-2xl border border-paper-line bg-paper p-5">
-            <h3 className="mb-3 text-sm font-semibold text-ink">Hiring Intelligence Chat</h3>
-            <div className="mb-3 flex max-h-64 min-h-12 flex-col gap-2 overflow-y-auto">
-              {chat.length === 0 && <p className="text-xs italic text-ink-faint">Ask anything about this candidate...</p>}
-              {chat.map((m, i) => (
-                <div key={i} className={`max-w-sm rounded-xl px-3 py-2 text-sm ${m.role === "user" ? "self-end bg-accent/10 text-accent" : "self-start bg-paper-line/20 text-ink-muted"}`}>
-                  {m.content}
+          {resumeFiles.length > 0 && (
+            <div className="mt-6 flex max-h-52 flex-col gap-1 overflow-y-auto">
+              {resumeFiles.map((f) => (
+                <div key={f.name} className="flex items-center justify-between rounded-lg py-2 transition-colors duration-150 hover:bg-paper-line/15">
+                  <div className="flex min-w-0 items-center gap-3 pl-1">
+                    <span className="truncate font-ui text-sm text-ink">{f.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeFile(f.name); }}
+                    className="ml-3 shrink-0 rounded-md px-2 py-1 font-ui text-xs text-ink-faint transition-colors duration-150 hover:text-ink-muted"
+                  >
+                    Remove
+                  </button>
                 </div>
               ))}
-              {chatLoading && <p className="text-xs text-ink-faint">Thinking...</p>}
             </div>
-            <div className="flex gap-2">
-              <input className="flex-1 rounded-xl border border-paper-line bg-paper-line/20 px-3 py-2 text-sm" placeholder="Ask about this candidate..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendChat()} />
-              <button type="button" onClick={sendChat} disabled={chatLoading || !chatInput.trim()} className="rounded-xl bg-accent/10 px-4 py-2 text-sm font-bold text-accent disabled:opacity-50">
+          )}
+
+          <div className="mt-8 flex gap-3">
+            <button
+              type="button"
+              onClick={() => (activeJobId ? setPage("results") : setPage("job"))}
+              className={`flex-1 py-2.5 ${btnSecondary}`}
+            >
+              ← Back
+            </button>
+            <button type="button" disabled={loading || !resumeFiles.length} onClick={analyzeResumes} className={`flex-1 py-2.5 ${btnPrimary}`}>
+              {loading ? "Analyzing…" : `Analyze ${resumeFiles.length} résumé(s)`}
+            </button>
+          </div>
+          {loading && (
+            <div className="mt-6">
+              <Spinner label={RECRUITER_LOADING_TIPS[loadingTipIndex]} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: RESULTS
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "results") {
+    return (
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className="fade-in-up mx-auto w-full max-w-3xl px-6 py-10 text-left sm:px-10">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="text-3xl font-bold tracking-tight text-ink">{job.title}</h2>
+            <button type="button" onClick={() => setPage("upload")} className="shrink-0 rounded-lg px-2.5 py-1.5 font-ui text-sm text-accent/85 transition-colors duration-150 hover:bg-accent/5 hover:text-accent">
+              Add résumés
+            </button>
+          </div>
+
+          <div className="mt-10 flex flex-col">
+            {topCandidates.map((c, i) => (
+              <CandidateRow key={c.id ?? i} c={c} rank={i + 1} isTop onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
+            ))}
+          </div>
+
+          {isLoggedIn && candidates.length > cutoff && (
+            <>
+              <div className="my-8 h-px bg-paper-line/40" aria-hidden />
+              <div className="mb-8 flex flex-col">
+                {candidates.slice(cutoff).map((c, i) => (
+                  <CandidateRow key={c.id ?? cutoff + i} c={c} rank={cutoff + i + 1} onClick={() => { setSelected(c); setChat([]); setEmailState("idle"); setEmailDraft(""); setPage("profile"); }} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {!isLoggedIn && candidates.length > cutoff && (
+            <div className="mt-10">
+              <button type="button" onClick={() => requireLogin(() => setPage("results"))} className={`px-6 py-2.5 ${btnPrimary}`}>
+                Sign in to see the other {candidates.length - cutoff} candidate{candidates.length - cutoff === 1 ? "" : "s"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // PAGE: PROFILE
+  // ════════════════════════════════════════════════════════════════════════════
+  if (page === "profile" && selected) {
+    const c = selected;
+    return (
+      <div className={shell}>
+        <Nav isLoggedIn={isLoggedIn} userName={userName} onLogin={() => setPage("login")} onLogout={() => signOut()} onHome={() => setPage("home")} apiBase={apiBase} apiConfigLoaded={apiConfigLoaded} />
+        <div className={content}>
+          <button
+            type="button"
+            onClick={() => setPage("results")}
+            aria-label="Back to results"
+            className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg text-ink-faint transition-colors duration-150 hover:bg-paper-line/25 hover:text-ink-muted"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* Header */}
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10 text-lg font-semibold text-accent">
+              {c.name?.[0]?.toUpperCase() || "?"}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-2xl font-bold tracking-tight text-ink">{c.name}</h2>
+                <ScorePill score={c.score ?? 0} />
+              </div>
+              <p className="mt-0.5 font-ui text-sm text-ink-muted">{c.recent_role}</p>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-ui text-xs text-ink-faint">
+                {c.email && <span>{c.email}</span>}
+                {c.phone && <span>{c.phone}</span>}
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-6 text-[15px] italic leading-relaxed text-ink-muted">{c.fit_summary}</p>
+          {c.score_rationale && <p className="mt-2 text-sm text-ink-muted">{c.score_rationale}</p>}
+
+          {c.skills && c.skills.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-1.5">
+              {c.skills.map((s) => (
+                <span key={s} className="rounded-full bg-paper-line/25 px-2.5 py-0.5 font-ui text-xs text-ink-muted">{s}</span>
+              ))}
+            </div>
+          )}
+
+          {/* Strengths & Gaps */}
+          <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
+            <div>
+              <p className="mb-2 text-sm font-semibold text-ink">Strengths</p>
+              <ul className="flex flex-col gap-2">
+                {(c.strengths || []).map((s, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
+                    <span className="mt-1 shrink-0 text-emerald-600/50">•</span>{s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-semibold text-ink">Gaps</p>
+              <ul className="flex flex-col gap-2">
+                {(c.weaknesses || []).map((w, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
+                    <span className="mt-1 shrink-0 text-red-500/40">•</span>{w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Email */}
+          <div className="mt-10">
+            {emailState === "idle" && (
+              <button type="button" onClick={generateEmail} className={`px-5 py-2 ${btnPrimary}`}>Generate interview email</button>
+            )}
+            {emailState === "generating" && <Spinner label="Drafting email…" />}
+            {emailState === "editing" && (
+              <div>
+                <p className="sr-only">Recipient: {c.email || "address not on file"}</p>
+                <textarea
+                  rows={9}
+                  className={`${inputClass} mb-3 font-mono text-[13px] leading-relaxed`}
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={openInterviewInMailApp} className={`px-5 py-2 ${btnPrimary}`}>
+                    Open in email app
+                  </button>
+                  <button type="button" onClick={() => setEmailState("idle")} className={`px-4 py-2 ${btnSecondary}`}>Discard</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Chat */}
+          <div className="mt-10">
+            <div className="flex min-h-12 max-h-64 flex-col gap-2 overflow-y-auto" aria-label="Chat about candidate">
+              {chat.map((m, i) => (
+                <div
+                  key={i}
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${
+                    m.role === "user"
+                      ? "self-end bg-accent/10 text-accent"
+                      : "self-start bg-paper-line/20 text-ink-muted"
+                  }`}
+                >
+                  {m.role === "user" ? m.content : <AssistantMarkdown content={m.content} />}
+                </div>
+              ))}
+              {chatLoading && <div className="self-start"><Spinner label="Thinking…" /></div>}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                className={`flex-1 ${inputClass}`}
+                placeholder="Ask the assistant…"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendChat()}
+              />
+              <button type="button" onClick={sendChat} disabled={chatLoading || !chatInput.trim()} className={`shrink-0 px-4 py-2 ${btnPrimary}`}>
                 Send
               </button>
             </div>
@@ -456,4 +896,51 @@ export function HiringApp() {
   }
 
   return null;
+}
+
+type CandidateRowData = {
+  name?: string;
+  score?: number;
+  recent_role?: string;
+  fit_summary?: string;
+};
+
+function CandidateRow({
+  c,
+  rank,
+  isTop = false,
+  onClick,
+}: {
+  c: CandidateRowData;
+  rank: number;
+  isTop?: boolean;
+  onClick: () => void;
+}) {
+  const summary = c.fit_summary && typeof c.fit_summary === "string" ? c.fit_summary.slice(0, 55) : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-3 text-left transition-all duration-150 hover:bg-paper-line/15 active:scale-[0.998] ${
+        isTop ? "" : "opacity-90"
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="w-5 shrink-0 font-ui text-xs font-semibold text-ink-faint/60">{rank}</span>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/8 font-ui text-sm font-semibold text-accent/80">
+          {c.name?.[0]?.toUpperCase() || "?"}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate font-ui text-sm font-medium text-ink">{c.name}</p>
+          <p className="truncate font-ui text-xs text-ink-faint">{c.recent_role || summary || ""}</p>
+        </div>
+      </div>
+      <div className="ml-3 flex shrink-0 items-center gap-2.5">
+        <ScorePill score={c.score ?? 0} />
+        <svg className="h-3.5 w-3.5 text-ink-faint/30 transition-colors duration-150 group-hover:text-ink-faint/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </button>
+  );
 }
