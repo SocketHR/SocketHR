@@ -546,8 +546,6 @@ export function HiringApp() {
 
   useEffect(() => { if (page === "home") void refreshSavedListings(); }, [page, refreshSavedListings]);
 
-  if (hashToken) return <CandidatePortal token={hashToken} apiBase={apiBase || DEFAULT_API_BASE} />;
-
   function resetNewListingWizard() {
     setActiveJobId(null);
     setJob({ title: "", description: "", requirements: "", culture: "" });
@@ -784,6 +782,8 @@ export function HiringApp() {
     hired: candidates.filter((c) => c.hireStatus === "hired").length,
     avgScore: candidates.length ? Math.round(candidates.reduce((sum, c) => sum + safeScore(c.score), 0) / candidates.length * 10) / 10 : 0,
   };
+
+  if (hashToken) return <CandidatePortal token={hashToken} apiBase={apiBase || DEFAULT_API_BASE} />;
 
   const shell = "hiring-shell min-h-screen";
   const content = "fade-in-up mx-auto w-full max-w-3xl px-5 py-10 sm:px-8";
